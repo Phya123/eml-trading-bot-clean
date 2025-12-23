@@ -25,6 +25,8 @@ STOP_LOSS_PCT = 0.02         # 2% stop
 TAKE_PROFIT_PCT = 0.03       # 3% take profit
 USE_TRAILING_STOP = True
 TRAILING_STOP_PCT = 0.008    # 0.8% trailing stop
+USE_FRACTIONAL_SHARES = True
+ORDER_TYPE = "notional"      # "notional" for dollar amounts, "qty" for shares
 COOLDOWN_MINUTES = 30        # don't re-enter too fast
 
 STATE_FILE = "bot_state.json"
@@ -82,43 +84,81 @@ def cancel_open_orders(symbol):
         pass
 
 def place_bracket_buy(symbol, notional):
-    # bracket requires qty; we'll convert notional -> qty using last price
     last = api.get_latest_trade(symbol).price
-    qty = max(int(notional / last), 0)
-    if qty <= 0:
-        print(f"⚠️ {symbol}: not enough buying power for qty.")
-        return False
-
-    # bracket prices
-    entry = last
-    tp = round(entry * (1 + TAKE_PROFIT_PCT), 2)
-    sl = round(entry * (1 - STOP_LOSS_PCT), 2)
-
-    if USE_TRAILING_STOP:
-        trail_pct = round(TRAILING_STOP_PCT * 100, 2)  # convert to percentage
-        print(f"🟢 BUY {symbol} qty={qty} entry≈{entry:.2f} TP={tp} Trail={trail_pct}%")
-        api.submit_order(
-            symbol=symbol,
-            qty=qty,
-            side="buy",
-            type="market",
-            time_in_force="day",
-            order_class="bracket",
-            take_profit={"limit_price": tp},
-            stop_loss={"stop_price": sl, "trail_percent": trail_pct},
-        )
+    
+    if USE_FRACTIONAL_SHARES and ORDER_TYPE == "notional":
+        # Use notional (dollar amount) for fractional shares
+        if notional < 1:
+            print(f"⚠️ {symbol}: notional amount too small (${notional:.2f}).")
+            return False
+        
+        # bracket prices
+        entry = last
+        tp = round(entry * (1 + TAKE_PROFIT_PCT), 2)
+        sl = round(entry * (1 - STOP_LOSS_PCT), 2)
+        
+        if USE_TRAILING_STOP:
+            trail_pct = round(TRAILING_STOP_PCT * 100, 2)  # convert to percentage
+            print(f"🟢 BUY {symbol} ${notional:.2f} entry≈{entry:.2f} TP={tp} Trail={trail_pct}%")
+            api.submit_order(
+                symbol=symbol,
+                notional=round(notional, 2),
+                side="buy",
+                type="market",
+                time_in_force="day",
+                order_class="bracket",
+                take_profit={"limit_price": tp},
+                stop_loss={"stop_price": sl, "trail_percent": trail_pct},
+            )
+        else:
+            print(f"🟢 BUY {symbol} ${notional:.2f} entry≈{entry:.2f} TP={tp} SL={sl}")
+            api.submit_order(
+                symbol=symbol,
+                notional=round(notional, 2),
+                side="buy",
+                type="market",
+                time_in_force="day",
+                order_class="bracket",
+                take_profit={"limit_price": tp},
+                stop_loss={"stop_price": sl},
+            )
     else:
-        print(f"🟢 BUY {symbol} qty={qty} entry≈{entry:.2f} TP={tp} SL={sl}")
-        api.submit_order(
-            symbol=symbol,
-            qty=qty,
-            side="buy",
-            type="market",
-            time_in_force="day",
-            order_class="bracket",
-            take_profit={"limit_price": tp},
-            stop_loss={"stop_price": sl},
-        )
+        # Legacy: calculate qty from notional
+        qty = max(int(notional / last), 0)
+        if qty <= 0:
+            print(f"⚠️ {symbol}: not enough buying power for qty.")
+            return False
+        
+        # bracket prices
+        entry = last
+        tp = round(entry * (1 + TAKE_PROFIT_PCT), 2)
+        sl = round(entry * (1 - STOP_LOSS_PCT), 2)
+        
+        if USE_TRAILING_STOP:
+            trail_pct = round(TRAILING_STOP_PCT * 100, 2)  # convert to percentage
+            print(f"🟢 BUY {symbol} qty={qty} entry≈{entry:.2f} TP={tp} Trail={trail_pct}%")
+            api.submit_order(
+                symbol=symbol,
+                qty=qty,
+                side="buy",
+                type="market",
+                time_in_force="day",
+                order_class="bracket",
+                take_profit={"limit_price": tp},
+                stop_loss={"stop_price": sl, "trail_percent": trail_pct},
+            )
+        else:
+            print(f"🟢 BUY {symbol} qty={qty} entry≈{entry:.2f} TP={tp} SL={sl}")
+            api.submit_order(
+                symbol=symbol,
+                qty=qty,
+                side="buy",
+                type="market",
+                time_in_force="day",
+                order_class="bracket",
+                take_profit={"limit_price": tp},
+                stop_loss={"stop_price": sl},
+            )
     return True
 
 def should_buy(symbol, bars):
