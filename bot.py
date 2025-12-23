@@ -18,10 +18,13 @@ SYMBOLS = ["SPY", "QQQ"]
 TIMEFRAME = TimeFrame.Minute
 BARS = 120  # last 120 minutes
 
-MAX_TRADES_PER_DAY = 4
-MAX_POSITION_PCT = 0.10      # 10% of buying power per symbol
+MAX_TRADES_PER_DAY = 5
+MAX_POSITION_PCT = 0.10      # 10% per trade
+DAILY_LOSS_LIMIT = 0.04      # 4% account kill switch
 STOP_LOSS_PCT = 0.02         # 2% stop
 TAKE_PROFIT_PCT = 0.03       # 3% take profit
+USE_TRAILING_STOP = True
+TRAILING_STOP_PCT = 0.008    # 0.8% trailing stop
 COOLDOWN_MINUTES = 30        # don't re-enter too fast
 
 STATE_FILE = "bot_state.json"
@@ -29,7 +32,7 @@ STATE_FILE = "bot_state.json"
 # ===== SIMPLE STATE (file-based) =====
 def load_state():
     if not os.path.exists(STATE_FILE):
-        return {"date": "", "trades_today": 0, "last_trade_ts": {}}
+        return {"date": "", "trades_today": 0, "last_trade_ts": {}, "start_equity": 0.0}
     with open(STATE_FILE, "r") as f:
         return json.load(f)
 
@@ -91,17 +94,31 @@ def place_bracket_buy(symbol, notional):
     tp = round(entry * (1 + TAKE_PROFIT_PCT), 2)
     sl = round(entry * (1 - STOP_LOSS_PCT), 2)
 
-    print(f"🟢 BUY {symbol} qty={qty} entry≈{entry:.2f} TP={tp} SL={sl}")
-    api.submit_order(
-        symbol=symbol,
-        qty=qty,
-        side="buy",
-        type="market",
-        time_in_force="day",
-        order_class="bracket",
-        take_profit={"limit_price": tp},
-        stop_loss={"stop_price": sl},
-    )
+    if USE_TRAILING_STOP:
+        trail_pct = round(TRAILING_STOP_PCT * 100, 2)  # convert to percentage
+        print(f"🟢 BUY {symbol} qty={qty} entry≈{entry:.2f} TP={tp} Trail={trail_pct}%")
+        api.submit_order(
+            symbol=symbol,
+            qty=qty,
+            side="buy",
+            type="market",
+            time_in_force="day",
+            order_class="bracket",
+            take_profit={"limit_price": tp},
+            stop_loss={"stop_price": sl, "trail_percent": trail_pct},
+        )
+    else:
+        print(f"🟢 BUY {symbol} qty={qty} entry≈{entry:.2f} TP={tp} SL={sl}")
+        api.submit_order(
+            symbol=symbol,
+            qty=qty,
+            side="buy",
+            type="market",
+            time_in_force="day",
+            order_class="bracket",
+            take_profit={"limit_price": tp},
+            stop_loss={"stop_price": sl},
+        )
     return True
 
 def should_buy(symbol, bars):
@@ -127,13 +144,26 @@ def should_buy(symbol, bars):
 def main_loop():
     state = load_state()
     today = dt.datetime.utcnow().date().isoformat()
-    if state.get("date") != today:
-        state = {"date": today, "trades_today": 0, "last_trade_ts": {}}
-        save_state(state)
-
+    
     acct = api.get_account()
+    current_equity = float(acct.equity)
     buying_power = float(acct.buying_power)
-    print(f"💰 Buying Power: ${buying_power:.2f}")
+    
+    if state.get("date") != today:
+        state = {"date": today, "trades_today": 0, "last_trade_ts": {}, "start_equity": current_equity}
+        save_state(state)
+    
+    # Check daily loss limit
+    start_equity = state.get("start_equity", current_equity)
+    if start_equity > 0:
+        daily_pnl_pct = (current_equity - start_equity) / start_equity
+        print(f"💰 Equity: ${current_equity:.2f} | Daily P&L: {daily_pnl_pct*100:.2f}%")
+        
+        if daily_pnl_pct <= -DAILY_LOSS_LIMIT:
+            print(f"🚨 DAILY LOSS LIMIT HIT: {daily_pnl_pct*100:.2f}% <= -{DAILY_LOSS_LIMIT*100}%")
+            return
+    else:
+        print(f"💰 Equity: ${current_equity:.2f} | Buying Power: ${buying_power:.2f}")
 
     if not market_open(api):
         print("⏳ Market closed. Sleeping.")
