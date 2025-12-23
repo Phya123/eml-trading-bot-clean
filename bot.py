@@ -18,16 +18,14 @@ SYMBOLS = ["SPY", "QQQ"]
 TIMEFRAME = TimeFrame.Minute
 BARS = 120  # last 120 minutes
 
-MAX_TRADES_PER_DAY = 5
+MAX_TRADES_PER_DAY = 6
+MAX_OPEN_POSITIONS = 2
 TRADE_ALLOCATION_PCT = 0.25  # 25% of account per trade
 MIN_NOTIONAL = 5.00          # Alpaca minimum
-DAILY_LOSS_LIMIT = 0.04      # 4% account kill switch
-STOP_LOSS_PCT = 0.02         # 2% stop
-TAKE_PROFIT_PCT = 0.03       # 3% take profit
-USE_TRAILING_STOP = True
-TRAILING_STOP_PCT = 0.008    # 0.8% trailing stop
-USE_FRACTIONAL_SHARES = True
-ORDER_TYPE = "notional"      # "notional" for dollar amounts, "qty" for shares
+DAILY_LOSS_LIMIT = 0.05      # 5% account kill switch
+STOP_LOSS_PCT = 0.004        # 0.4% stop
+TAKE_PROFIT_PCT = 0.008      # 0.8% take profit
+TRAILING_STOP = True
 COOLDOWN_MINUTES = 30        # don't re-enter too fast
 
 STATE_FILE = "bot_state.json"
@@ -75,6 +73,13 @@ def get_position_qty(symbol):
         return float(pos.qty)
     except Exception:
         return 0.0
+
+def count_open_positions():
+    try:
+        positions = api.list_positions()
+        return len(positions)
+    except Exception:
+        return 0
 
 def cancel_open_orders(symbol):
     try:
@@ -154,6 +159,12 @@ def main_loop():
 
     if state["trades_today"] >= MAX_TRADES_PER_DAY:
         print("🛑 Max trades reached for today.")
+        return
+    
+    # Check max open positions
+    open_positions = count_open_positions()
+    if open_positions >= MAX_OPEN_POSITIONS:
+        print(f"🛑 Max open positions reached: {open_positions}/{MAX_OPEN_POSITIONS}")
         return
 
     for sym in SYMBOLS:
