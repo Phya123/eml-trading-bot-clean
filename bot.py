@@ -19,7 +19,8 @@ TIMEFRAME = TimeFrame.Minute
 BARS = 120  # last 120 minutes
 
 MAX_TRADES_PER_DAY = 5
-MAX_POSITION_PCT = 0.10      # 10% per trade
+TRADE_ALLOCATION_PCT = 0.25  # 25% of account per trade
+MIN_NOTIONAL = 5.00          # Alpaca minimum
 DAILY_LOSS_LIMIT = 0.04      # 4% account kill switch
 STOP_LOSS_PCT = 0.02         # 2% stop
 TAKE_PROFIT_PCT = 0.03       # 3% take profit
@@ -88,8 +89,8 @@ def place_bracket_buy(symbol, notional):
     
     if USE_FRACTIONAL_SHARES and ORDER_TYPE == "notional":
         # Use notional (dollar amount) for fractional shares
-        if notional < 1:
-            print(f"⚠️ {symbol}: notional amount too small (${notional:.2f}).")
+        if notional < MIN_NOTIONAL:
+            print(f"⚠️ {symbol}: notional ${notional:.2f} below minimum ${MIN_NOTIONAL}.")
             return False
         
         # bracket prices
@@ -232,8 +233,8 @@ def main_loop():
             continue
 
         if should_buy(sym, bars):
-            # allocate notional
-            notional = buying_power * MAX_POSITION_PCT
+            # allocate notional based on equity
+            notional = current_equity * TRADE_ALLOCATION_PCT
             cancel_open_orders(sym)
             ok = place_bracket_buy(sym, notional)
             if ok:
