@@ -14,7 +14,7 @@ APCA_API_KEY_ID = os.getenv("APCA_API_KEY_ID", "").strip()
 APCA_API_SECRET_KEY = os.getenv("APCA_API_SECRET_KEY", "").strip()
 APCA_API_BASE_URL = os.getenv("APCA_API_BASE_URL", "https://api.alpaca.markets").strip()
 
-SYMBOLS = os.getenv("SYMBOLS", "SPY,AAPL,MSFT").split(",")  # stocks only (focused portfolio)
+SYMBOLS = os.getenv("SYMBOLS", "SPY,QQQ,XLE").split(",")  # stocks only (focused portfolio)
 SYMBOLS = [s.strip().upper() for s in SYMBOLS if s.strip()]
 MAX_TRADES_PER_SYMBOL = int(os.getenv("MAX_TRADES_PER_SYMBOL", "2"))  # up to 2 trades per symbol per day
 
