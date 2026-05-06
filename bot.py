@@ -7,6 +7,20 @@ import pandas as pd
 from alpaca_trade_api import REST
 from alpaca_trade_api.rest import TimeFrame
 
+
+def normalize_symbol(symbol: str) -> str:
+    if symbol is None:
+        return ""
+    return str(symbol).strip().upper()
+
+
+def parse_symbols(symbols_str: str):
+    raw = symbols_str or ""
+    parsed = [normalize_symbol(s) for s in raw.split(",")]
+    parsed = [s for s in parsed if s]
+    return parsed or ["SPY", "QQQ", "XLE"]
+
+
 # -----------------------------
 # CONFIG (edit here or use env vars)
 # -----------------------------
@@ -14,8 +28,7 @@ APCA_API_KEY_ID = os.getenv("APCA_API_KEY_ID", "").strip()
 APCA_API_SECRET_KEY = os.getenv("APCA_API_SECRET_KEY", "").strip()
 APCA_API_BASE_URL = os.getenv("APCA_API_BASE_URL", "https://api.alpaca.markets").strip()
 
-SYMBOLS = os.getenv("SYMBOLS", "SPY,QQQ,XLE").split(",")  # stocks only (focused portfolio)
-SYMBOLS = [s.strip().upper() for s in SYMBOLS if s.strip()]
+SYMBOLS = parse_symbols(os.getenv("SYMBOLS", "SPY,QQQ,XLE"))  # stocks only (focused portfolio)
 MAX_TRADES_PER_SYMBOL = int(os.getenv("MAX_TRADES_PER_SYMBOL", "2"))  # up to 2 trades per symbol per day
 
 # ===== AUTO MODE RISK CONTROLS =====
@@ -124,6 +137,10 @@ def strong_buy_signal(df: pd.DataFrame) -> bool:
     return trend_ok and rsi_ok and volume_ok
 
 def position_exists(api: REST, symbol: str) -> bool:
+    symbol = normalize_symbol(symbol)
+    if not symbol:
+        return False
+
     try:
         api.get_position(symbol)
         return True
@@ -245,27 +262,29 @@ def manage_positions(api):
 
 def can_trade_symbol(state: dict, symbol: str, max_trades: int) -> bool:
     """
-    Check if bot is allowed to trade the symbol.
-    Returns True if symbol passes validation and hasn't exceeded daily trade limit.
+    Check if the bot is allowed to trade the symbol.
+    Returns True if symbol is valid and hasn't exceeded the daily trade limit.
     """
-    if not symbol:
+    try:
+        symbol = normalize_symbol(symbol)
+        if not symbol:
+            return False
+
+        # Optional blocked symbols
+        blocked_symbols = ["SCAM", "TEST"]
+        if symbol in blocked_symbols:
+            return False
+
+        # Check daily trade limit for this symbol
+        tk = today_key()
+        trades_today = state.get(tk, {}).get("symbol_trades", {}).get(symbol, 0)
+        if trades_today >= max_trades:
+            return False
+
+        return True
+    except Exception as e:
+        print(f"can_trade_symbol error: {e}")
         return False
-
-    # Prevent weird values
-    symbol = str(symbol).upper().strip()
-
-    # Optional blocked symbols
-    blocked_symbols = ["SCAM", "TEST"]
-    if symbol in blocked_symbols:
-        return False
-
-    # Check daily trade limit for this symbol
-    tk = today_key()
-    trades_today = state.get(tk, {}).get("symbol_trades", {}).get(symbol, 0)
-    if trades_today >= max_trades:
-        return False
-
-    return True
 
 # -----------------------------
 # MAIN LOOP
@@ -363,7 +382,10 @@ def main():
 
             # Scan symbols for strongest signal; buy first match not already owned
             bought_any = False
-            for sym in SYMBOLS:
+            for raw_sym in SYMBOLS:
+                sym = normalize_symbol(raw_sym)
+                if not sym:
+                    continue
                 if sym in open_syms:
                     continue
                 if position_exists(api, sym):
@@ -373,7 +395,12 @@ def main():
                 if not can_trade_symbol(state, sym, MAX_TRADES_PER_SYMBOL):
                     continue
 
-                df = get_bars_df(api, sym, limit=120)
+                try:
+                    df = get_bars_df(api, sym, limit=120)
+                except Exception as e:
+                    print(f"⚠️ Skipping symbol {sym}: failed to load bars ({e})")
+                    continue
+
                 if df.empty or len(df) < 50:
                     continue
 
