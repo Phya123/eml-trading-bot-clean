@@ -398,10 +398,12 @@ def main():
                 print("🔎 No strong signals right now. Waiting...")
 
         except Exception as e:
+            import traceback
             print(f"❌ Loop error: {e}")
+            traceback.print_exc()
 
-        print("🫀 Bot heartbeat...")
-        time.sleep(60)
+        print(f"💓 Loop iteration complete. Sleeping {RUN_EVERY_SECONDS}s...")
+        time.sleep(RUN_EVERY_SECONDS)
 
 if __name__ == "__main__":
     main()
