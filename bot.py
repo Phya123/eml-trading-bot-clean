@@ -243,6 +243,30 @@ def manage_positions(api):
                 time_in_force="day"
             )
 
+def can_trade_symbol(state: dict, symbol: str, max_trades: int) -> bool:
+    """
+    Check if bot is allowed to trade the symbol.
+    Returns True if symbol passes validation and hasn't exceeded daily trade limit.
+    """
+    if not symbol:
+        return False
+
+    # Prevent weird values
+    symbol = str(symbol).upper().strip()
+
+    # Optional blocked symbols
+    blocked_symbols = ["SCAM", "TEST"]
+    if symbol in blocked_symbols:
+        return False
+
+    # Check daily trade limit for this symbol
+    tk = today_key()
+    trades_today = state.get(tk, {}).get("symbol_trades", {}).get(symbol, 0)
+    if trades_today >= max_trades:
+        return False
+
+    return True
+
 # -----------------------------
 # MAIN LOOP
 # -----------------------------
