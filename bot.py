@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import json
 from datetime import datetime, timezone, date
@@ -11,12 +12,24 @@ from alpaca_trade_api.rest import TimeFrame
 def normalize_symbol(symbol: str) -> str:
     if symbol is None:
         return ""
-    return str(symbol).strip().upper()
+    s = str(symbol).strip().upper()
+
+    # Remove common prefixes like $ and common suffixes like .US / :USD
+    if s.startswith("$"):
+        s = s[1:]
+    for suffix in (".US", ":USD", ".USD"):
+        if s.endswith(suffix):
+            s = s[: -len(suffix)]
+
+    # Only keep letters and digits to normalize common symbol formats.
+    s = "".join(ch for ch in s if ch.isalnum())
+    return s
 
 
 def parse_symbols(symbols_str: str):
     raw = symbols_str or ""
-    parsed = [normalize_symbol(s) for s in raw.split(",")]
+    parts = re.split(r"[\s,;]+", raw)
+    parsed = [normalize_symbol(s) for s in parts]
     parsed = [s for s in parsed if s]
     return parsed or ["SPY", "QQQ", "XLE"]
 
@@ -95,6 +108,16 @@ def get_current_equity(api):
     """Get the current account equity"""
     acct = api.get_account()
     return float(acct.equity)
+
+def validate_api(api):
+    """Validate Alpaca credentials and connectivity before trading."""
+    try:
+        api.get_account()
+        api.get_clock()
+        return True
+    except Exception as e:
+        print(f"❌ Alpaca auth/connect error: {e}")
+        return False
 
 def daily_pnl(api):
     """Calculate daily profit/loss vs yesterday's close"""
@@ -266,18 +289,18 @@ def can_trade_symbol(state: dict, symbol: str, max_trades: int) -> bool:
     Returns True if symbol is valid and hasn't exceeded the daily trade limit.
     """
     try:
-        symbol = normalize_symbol(symbol)
-        if not symbol:
+        normalized = normalize_symbol(symbol)
+        if not normalized:
             return False
 
         # Optional blocked symbols
         blocked_symbols = ["SCAM", "TEST"]
-        if symbol in blocked_symbols:
+        if normalized in blocked_symbols:
             return False
 
         # Check daily trade limit for this symbol
         tk = today_key()
-        trades_today = state.get(tk, {}).get("symbol_trades", {}).get(symbol, 0)
+        trades_today = state.get(tk, {}).get("symbol_trades", {}).get(normalized, 0)
         if trades_today >= max_trades:
             return False
 
@@ -290,13 +313,29 @@ def can_trade_symbol(state: dict, symbol: str, max_trades: int) -> bool:
 # MAIN LOOP
 # -----------------------------
 def main():
-    if not APCA_API_KEY_ID or not APCA_API_SECRET_KEY:
-        print("❌ Missing APCA_API_KEY_ID / APCA_API_SECRET_KEY env vars")
-        return
+    while True:
+        if not APCA_API_KEY_ID or not APCA_API_SECRET_KEY:
+            missing = []
+            if not APCA_API_KEY_ID:
+                missing.append("APCA_API_KEY_ID")
+            if not APCA_API_SECRET_KEY:
+                missing.append("APCA_API_SECRET_KEY")
+            print(f"❌ Missing env vars: {', '.join(missing)}")
+            print("⏳ Waiting for environment variables. Retrying in 60 seconds.")
+            time.sleep(60)
+            continue
 
-    api = REST(APCA_API_KEY_ID, APCA_API_SECRET_KEY, APCA_API_BASE_URL, api_version="v2")
+        api = REST(APCA_API_KEY_ID, APCA_API_SECRET_KEY, APCA_API_BASE_URL, api_version="v2")
+
+        if not validate_api(api):
+            print("❌ Alpaca auth/connect error. Please check APCA_API_KEY_ID, APCA_API_SECRET_KEY, and APCA_API_BASE_URL.")
+            print("⏳ Retrying in 60 seconds.")
+            time.sleep(60)
+            continue
+
+        break
+
     state = load_state()
-
     print(f"✅ Connected. BaseURL={APCA_API_BASE_URL}")
 
     while True:
@@ -413,7 +452,9 @@ def main():
                 df["vol_avg"] = vol.rolling(20).mean()
 
                 if strong_buy_signal(df):
-                    print(f"🚀 Signal OK: {sym} | Trying BUY notional=${notional:.2f} (extended_hours={not market_is_open(api)})")
+                    is_open = market_is_open(api)
+                    is_extended_hours = not is_open
+                    print(f"🚀 Signal OK: {sym} | Trying BUY notional=${notional:.2f} (extended_hours={is_extended_hours})")
                     order = submit_buy_notional(api, sym, notional)
                     print(f"✅ Order submitted: {order.id} {sym} ${notional:.2f}")
 
