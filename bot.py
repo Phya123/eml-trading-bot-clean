@@ -1,477 +1,119 @@
+import csv
 import os
-import re
-import time
-import json
-from datetime import datetime, timezone, date
+from datetime import datetime
+import alpaca_trade_api as tradeapi
 
-import pandas as pd
-from alpaca_trade_api import REST
-from alpaca_trade_api.rest import TimeFrame
+TRADE_LOG_FILE = "trade_log.csv"
 
 
-def normalize_symbol(symbol: str) -> str:
-    if symbol is None:
-        return ""
-    s = str(symbol).strip().upper()
+# ==========================================
+# CREATE CSV FILE IF IT DOESN'T EXIST
+# ==========================================
 
-    # Remove common prefixes like $ and common suffixes like .US / :USD
-    if s.startswith("$"):
-        s = s[1:]
-    for suffix in (".US", ":USD", ".USD"):
-        if s.endswith(suffix):
-            s = s[: -len(suffix)]
-
-    # Only keep letters and digits to normalize common symbol formats.
-    s = "".join(ch for ch in s if ch.isalnum())
-    return s
-
-
-def parse_symbols(symbols_str: str):
-    raw = symbols_str or ""
-    parts = re.split(r"[\s,;]+", raw)
-    parsed = [normalize_symbol(s) for s in parts]
-    parsed = [s for s in parsed if s]
-    return parsed or ["SPY", "QQQ", "XLE"]
+def initialize_trade_log():
+    if not os.path.exists(TRADE_LOG_FILE):
+        with open(TRADE_LOG_FILE, mode="w", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow([
+                "Timestamp",
+                "Symbol",
+                "Side",
+                "Entry Price",
+                "Exit Price",
+                "Quantity",
+                "PnL",
+                "Reason"
+            ])
+        print("✅ Trade log initialized.")
 
 
-# -----------------------------
-# CONFIG (edit here or use env vars)
-# -----------------------------
-APCA_API_KEY_ID = os.getenv("APCA_API_KEY_ID", "").strip()
-APCA_API_SECRET_KEY = os.getenv("APCA_API_SECRET_KEY", "").strip()
-APCA_API_BASE_URL = os.getenv("APCA_API_BASE_URL", "https://api.alpaca.markets").strip()
+# ==========================================
+# LOG A TRADE
+# ==========================================
 
-SYMBOLS = parse_symbols(os.getenv("SYMBOLS", "SPY,QQQ,XLE"))  # stocks only (focused portfolio)
-MAX_TRADES_PER_SYMBOL = int(os.getenv("MAX_TRADES_PER_SYMBOL", "2"))  # up to 2 trades per symbol per day
+def log_trade(symbol, side, entry_price, exit_price, quantity, pnl, reason):
+    with open(TRADE_LOG_FILE, mode="a", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow([
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            symbol,
+            side,
+            entry_price,
+            exit_price,
+            quantity,
+            pnl,
+            reason
+        ])
+    print(f"📈 Trade logged: {symbol} | PnL={pnl}")
 
-# ===== AUTO MODE RISK CONTROLS =====
-USE_EQUITY_PCT = float(os.getenv("USE_EQUITY_PCT", "0.80"))         # only use 80% of total equity (20% cash reserve)
-TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "1.5"))        # +1.5%
-STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "-1.0"))           # -1.0%
 
-DAILY_PROFIT_GOAL = float(os.getenv("DAILY_PROFIT_GOAL", "4.0"))    # stop after +$4/day (NO re-entry same day)
-DAILY_MAX_LOSS = float(os.getenv("DAILY_MAX_LOSS", "6.0"))          # stop after -$6/day (resume next day only)
-MAX_DAILY_SPEND = float(os.getenv("MAX_DAILY_SPEND", "90.0"))       # max buys per day
-DAILY_LOSS_STOP_PCT = float(os.getenv("DAILY_LOSS_STOP_PCT", "4.0")) # stop after -4% day
+def calculate_signal(symbol):
+    # TODO: replace this placeholder with your real signal logic
+    print(f"Calculating signal for {symbol}")
+    return 0.0
 
-MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", "3"))
-ORDER_NOTIONAL = float(os.getenv("ORDER_NOTIONAL", "32.50"))        # $32.50 per trade (fractional)
+MIN_SIGNAL_SCORE = 0.5
 
-COOLDOWN_MINUTES = int(os.getenv("COOLDOWN_MINUTES", "15"))
 
-# Trading behavior
-RUN_EVERY_SECONDS = int(os.getenv("RUN_EVERY_SECONDS", "120"))      # 2 min default
-CASH_BUFFER = float(os.getenv("CASH_BUFFER", "2.00"))               # keep $2 buffer to avoid rejections
+# ==========================================
+# INITIALIZE ON STARTUP
+# ==========================================
 
-# Signals (stronger)
-EMA_FAST = int(os.getenv("EMA_FAST", "9"))
-EMA_SLOW = int(os.getenv("EMA_SLOW", "21"))
-RSI_LEN = int(os.getenv("RSI_LEN", "14"))
-RSI_BUY_MIN = float(os.getenv("RSI_BUY_MIN", "52"))                 # stronger than random
-VOLUME_SPIKE = float(os.getenv("VOLUME_SPIKE", "1.10"))             # vol > 110% of vol avg
+initialize_trade_log()
 
-# After-hours behavior
-ALLOW_EXTENDED_HOURS = os.getenv("ALLOW_EXTENDED_HOURS", "false").lower() == "true"
+# ==========================================
+# MAIN TRADING LOGIC
+# ==========================================
 
-# State file (persists daily spend + start-of-day equity)
-STATE_PATH = os.getenv("STATE_PATH", "state.json")
+# Alpaca API setup (replace with your credentials)
+API_KEY = os.getenv('ALPACA_API_KEY', 'your_api_key')
+API_SECRET = os.getenv('ALPACA_API_SECRET', 'your_secret')
+BASE_URL = 'https://paper-api.alpaca.markets'  # Use live URL for live trading
 
-# -----------------------------
-# HELPERS
-# -----------------------------
-def load_state():
-    if os.path.exists(STATE_PATH):
-        try:
-            with open(STATE_PATH, "r") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {}
+api = tradeapi.REST(API_KEY, API_SECRET, BASE_URL, api_version='v2')
 
-def save_state(state):
-    try:
-        with open(STATE_PATH, "w") as f:
-            json.dump(state, f)
-    except Exception:
-        pass
+# Example symbols and trade size (customize as needed)
+symbols = ['SPY', 'QQQ', 'XLE']
+trade_size = 100  # Notional value in dollars
+open_positions = {}
 
-def today_key():
-    # Use UTC date to avoid timezone weirdness on servers
-    return str(date.today())
-
-def get_day_start_equity(api):
-    """Get the equity at the start of the trading day (yesterday's close)"""
-    acct = api.get_account()
-    return float(acct.last_equity)
-
-def get_current_equity(api):
-    """Get the current account equity"""
-    acct = api.get_account()
-    return float(acct.equity)
-
-def validate_api(api):
-    """Validate Alpaca credentials and connectivity before trading."""
-    try:
-        api.get_account()
-        api.get_clock()
-        return True
-    except Exception as e:
-        print(f"❌ Alpaca auth/connect error: {e}")
-        return False
-
-def daily_pnl(api):
-    """Calculate daily profit/loss vs yesterday's close"""
-    acct = api.get_account()
-    return float(acct.equity) - float(acct.last_equity)
-
-def rsi(series: pd.Series, length: int = 14) -> pd.Series:
-    delta = series.diff()
-    gain = delta.clip(lower=0).rolling(length).mean()
-    loss = (-delta.clip(upper=0)).rolling(length).mean()
-    rs = gain / (loss.replace(0, 1e-9))
-    return 100 - (100 / (1 + rs))
-
-def market_is_open(api: REST):
-    clock = api.get_clock()
-    return clock.is_open
-
-def can_trade_now(api: REST) -> bool:
-    if market_is_open(api):
-        return True
-    return ALLOW_EXTENDED_HOURS
-
-def get_bars_df(api: REST, symbol: str, limit: int = 120) -> pd.DataFrame:
-    bars = api.get_bars(symbol, TimeFrame.Minute, limit=limit).df
-    # alpaca returns multi-index if multiple symbols; guard:
-    if isinstance(bars.index, pd.MultiIndex):
-        bars = bars.xs(symbol, level=0)
-    bars = bars.reset_index()
-    return bars
-
-def strong_buy_signal(df: pd.DataFrame) -> bool:
-    """Check for strong buy signal with trend, RSI, and volume confirmation"""
-    # Indicators already computed: ema9, ema21, rsi, volume, vol_avg
-    last = df.iloc[-1]
-
-    trend_ok = last["ema9"] > last["ema21"]
-    rsi_ok = 52 <= last["rsi"] <= 68
-    volume_ok = last["volume"] > last["vol_avg"] * 1.2
-
-    return trend_ok and rsi_ok and volume_ok
-
-def position_exists(api: REST, symbol: str) -> bool:
-    symbol = normalize_symbol(symbol)
-    if not symbol:
-        return False
-
-    try:
-        api.get_position(symbol)
-        return True
-    except Exception:
-        return False
-
-def list_open_positions(api: REST):
-    try:
-        return api.list_positions()
-    except Exception:
-        return []
-
-def compute_daily_controls(api: REST, state: dict):
-    """Compute daily spend and P&L tracking"""
-    tk = today_key()
-    if tk not in state:
-        # Initialize today's tracking
-        state[tk] = {
-            "spent": 0.0,
-            "last_trade_ts": 0,
-            "symbol_trades": {}  # track trades per symbol
-        }
-        save_state(state)
-
-    # Use Alpaca's last_equity for accurate day-start equity
-    start_eq = get_day_start_equity(api)
-    cur_eq = get_current_equity(api)
-    daily_pl = daily_pnl(api)
-
-    down_pct = 0.0
-    if start_eq > 0:
-        down_pct = abs((cur_eq - start_eq) / start_eq * 100.0) if cur_eq < start_eq else 0.0
-
-    spent = float(state[tk].get("spent", 0.0))
-    return spent, down_pct, start_eq, cur_eq, daily_pl
-
-def register_spend(state: dict, amount: float, symbol: str = None):
-    tk = today_key()
-    state.setdefault(tk, {})
-    state[tk]["spent"] = float(state[tk].get("spent", 0.0)) + float(amount)
-    state[tk]["last_trade_ts"] = int(time.time())
-    
-    # Track per-symbol trades
-    if symbol:
-        state[tk].setdefault("symbol_trades", {})
-        state[tk]["symbol_trades"][symbol] = state[tk]["symbol_trades"].get(symbol, 0) + 1
-    
-    save_state(state)
-
-def submit_buy_notional(api: REST, symbol: str, notional: float):
-    # If extended hours, safest is LIMIT order.
-    # During regular hours, MARKET is fine.
-    is_open = market_is_open(api)
-
-    if is_open:
-        order = api.submit_order(
-            symbol=symbol,
-            notional=round(notional, 2),
-            side="buy",
-            type="market",
-            time_in_force="day"
-        )
-        return order
-
-    # Extended hours: limit order (small cushion above last close)
-    # NOTE: extended hours typically requires limit orders.
-    df = get_bars_df(api, symbol, limit=5)
-    last_price = float(df["close"].iloc[-1])
-    limit_price = round(last_price * 1.002, 2)
-
-    order = api.submit_order(
-        symbol=symbol,
-        notional=round(notional, 2),
-        side="buy",
-        type="limit",
-        limit_price=limit_price,
-        time_in_force="day",
-        extended_hours=True
-    )
-    return order
-
-def should_cooldown(state: dict, cooldown_sec: int = 90) -> bool:
-    tk = today_key()
-    last_ts = int(state.get(tk, {}).get("last_trade_ts", 0))
-    return (time.time() - last_ts) < cooldown_sec
-
-def manage_positions(api):
-    """Check all open positions and exit on stop loss or take profit"""
+try:
     positions = api.list_positions()
+    open_positions = {
+        p.symbol: {
+            "qty": float(p.qty),
+            "avg_entry": float(p.avg_entry_price)
+        }
+        for p in positions
+    }
+    print(f"Synced positions: {list(open_positions.keys())}")
+except Exception as e:
+    print(f"Position sync failed: {e}")
+    open_positions = {}
 
-    for p in positions:
-        entry = float(p.avg_entry_price)
-        last = float(p.current_price)
-        qty = float(p.qty)
+for symbol in symbols:
+    if trade_size < 1:
+        print("Trade size too small. Skipping.")
+        continue
 
-        pnl_pct = (last - entry) / entry * 100
+    signal_score = calculate_signal(symbol)
+    print(f"{symbol} signal score = {signal_score}")
+    print(f"Checking buy conditions for {symbol}")
 
-        # Stop loss
-        if pnl_pct <= STOP_LOSS_PCT:
-            print(f"🛑 STOP LOSS {p.symbol} {pnl_pct:.2f}%")
-            api.submit_order(
-                symbol=p.symbol,
-                qty=qty,
-                side="sell",
-                type="market",
-                time_in_force="day"
-            )
-
-        # Take profit
-        elif pnl_pct >= TAKE_PROFIT_PCT:
-            print(f"💰 TAKE PROFIT {p.symbol} {pnl_pct:.2f}%")
-            api.submit_order(
-                symbol=p.symbol,
-                qty=qty,
-                side="sell",
-                type="market",
-                time_in_force="day"
-            )
-
-def can_trade_symbol(state: dict, symbol: str, max_trades: int) -> bool:
-    """
-    Check if the bot is allowed to trade the symbol.
-    Returns True if symbol is valid and hasn't exceeded the daily trade limit.
-    """
-    try:
-        normalized = normalize_symbol(symbol)
-        if not normalized:
-            return False
-
-        # Optional blocked symbols
-        blocked_symbols = ["SCAM", "TEST"]
-        if normalized in blocked_symbols:
-            return False
-
-        # Check daily trade limit for this symbol
-        tk = today_key()
-        trades_today = state.get(tk, {}).get("symbol_trades", {}).get(normalized, 0)
-        if trades_today >= max_trades:
-            return False
-
-        return True
-    except Exception as e:
-        print(f"can_trade_symbol error: {e}")
-        return False
-
-# -----------------------------
-# MAIN LOOP
-# -----------------------------
-def main():
-    while True:
-        if not APCA_API_KEY_ID or not APCA_API_SECRET_KEY:
-            missing = []
-            if not APCA_API_KEY_ID:
-                missing.append("APCA_API_KEY_ID")
-            if not APCA_API_SECRET_KEY:
-                missing.append("APCA_API_SECRET_KEY")
-            print(f"❌ Missing env vars: {', '.join(missing)}")
-            print("⏳ Waiting for environment variables. Retrying in 60 seconds.")
-            time.sleep(60)
-            continue
-
-        api = REST(APCA_API_KEY_ID, APCA_API_SECRET_KEY, APCA_API_BASE_URL, api_version="v2")
-
-        if not validate_api(api):
-            print("❌ Alpaca auth/connect error. Please check APCA_API_KEY_ID, APCA_API_SECRET_KEY, and APCA_API_BASE_URL.")
-            print("⏳ Retrying in 60 seconds.")
-            time.sleep(60)
-            continue
-
-        break
-
-    state = load_state()
-    print(f"✅ Connected. BaseURL={APCA_API_BASE_URL}")
-
-    while True:
+    if signal_score >= MIN_SIGNAL_SCORE:
         try:
-            # ========================================
-            # 1️⃣ PROTECT CAPITAL - manage exits first
-            # ========================================
-            manage_positions(api)
-
-            # Get account state
-            acct = api.get_account()
-            equity = float(acct.equity)
-            usable_equity = equity * USE_EQUITY_PCT
-            buying_power = min(float(acct.buying_power), usable_equity)
-            cash = float(acct.cash)
-
-            spent, down_pct, start_eq, cur_eq, daily_pl = compute_daily_controls(api, state)
-
-            print(f"💰 Buying Power: {buying_power:.2f} | Cash: {cash:.2f} | Equity: {equity:.2f} (using {USE_EQUITY_PCT*100:.0f}%)")
-            print(f"📊 Daily spent: {spent:.2f}/{MAX_DAILY_SPEND:.2f} | Down today: {down_pct:.2f}% (start {start_eq:.2f} → now {cur_eq:.2f})")
-            
-            pnl_today = daily_pnl(api)
-            print(f"📊 Daily P&L: ${pnl_today:.2f}")
-
-            # ========================================
-            # 2️⃣ DAILY STOP CHECKS - goal/loss limits
-            # ========================================
-            # Stop after profit goal
-            if pnl_today >= DAILY_PROFIT_GOAL:
-                print("🎯 Daily profit goal reached. Stopping trading for today.")
-                time.sleep(600)
-                continue
-
-            # Stop after max dollar loss
-            if pnl_today <= -DAILY_MAX_LOSS:
-                print(f"🛑 Daily max loss (-${DAILY_MAX_LOSS}) hit. Stopping trading for today.")
-                time.sleep(600)
-                continue
-
-            # Stop after percentage loss limit
-            if pnl_today <= -(equity * DAILY_LOSS_STOP_PCT / 100):
-                print("🛑 Daily loss % limit hit. Stopping trading for today.")
-                time.sleep(600)
-                continue
-
-            if spent >= MAX_DAILY_SPEND:
-                print("🛑 Stop: reached MAX_DAILY_SPEND. No more buys today.")
-                time.sleep(RUN_EVERY_SECONDS)
-                continue
-
-            # ========================================
-            # 3️⃣ TRY ENTRIES - new buys only if safe
-            # ========================================
-            if not can_trade_now(api):
-                print("⏳ Market closed. Sleeping.")
-                time.sleep(RUN_EVERY_SECONDS)
-                continue
-
-            if should_cooldown(state, cooldown_sec=COOLDOWN_MINUTES * 60):
-                print(f"⏳ Cooldown active ({COOLDOWN_MINUTES} min). Waiting.")
-                time.sleep(RUN_EVERY_SECONDS)
-                continue
-
-            # Respect max open positions
-            positions = list_open_positions(api)
-            open_syms = {p.symbol for p in positions}
-            if len(open_syms) >= MAX_OPEN_POSITIONS:
-                print(f"✅ Max positions reached ({len(open_syms)}/{MAX_OPEN_POSITIONS}). Holding.")
-                time.sleep(RUN_EVERY_SECONDS)
-                continue
-
-            # Remaining daily budget and usable equity (70% of total equity)
-            remaining_budget = max(0.0, MAX_DAILY_SPEND - spent)
-            available = max(0.0, buying_power - CASH_BUFFER)
-            
-            if available < ORDER_NOTIONAL or remaining_budget < ORDER_NOTIONAL:
-                print(f"⚠️ Not enough buying power or daily budget left for ORDER_NOTIONAL (${ORDER_NOTIONAL}).")
-                time.sleep(RUN_EVERY_SECONDS)
-                continue
-
-            # Use fixed ORDER_NOTIONAL capped by available budget
-            notional = min(ORDER_NOTIONAL, remaining_budget, available)
-
-            # Scan symbols for strongest signal; buy first match not already owned
-            bought_any = False
-            for raw_sym in SYMBOLS:
-                sym = normalize_symbol(raw_sym)
-                if not sym:
-                    continue
-                if sym in open_syms:
-                    continue
-                if position_exists(api, sym):
-                    continue
-                
-                # Check symbol daily trade limit (2 trades per symbol per day)
-                if not can_trade_symbol(state, sym, MAX_TRADES_PER_SYMBOL):
-                    continue
-
-                try:
-                    df = get_bars_df(api, sym, limit=120)
-                except Exception as e:
-                    print(f"⚠️ Skipping symbol {sym}: failed to load bars ({e})")
-                    continue
-
-                if df.empty or len(df) < 50:
-                    continue
-
-                # Compute indicators
-                close = df["close"]
-                vol = df["volume"]
-                df["ema9"] = close.ewm(span=9, adjust=False).mean()
-                df["ema21"] = close.ewm(span=21, adjust=False).mean()
-                df["rsi"] = rsi(close, 14)
-                df["vol_avg"] = vol.rolling(20).mean()
-
-                if strong_buy_signal(df):
-                    is_open = market_is_open(api)
-                    is_extended_hours = not is_open
-                    print(f"🚀 Signal OK: {sym} | Trying BUY notional=${notional:.2f} (extended_hours={is_extended_hours})")
-                    order = submit_buy_notional(api, sym, notional)
-                    print(f"✅ Order submitted: {order.id} {sym} ${notional:.2f}")
-
-                    register_spend(state, notional, symbol=sym)
-                    bought_any = True
-                    break
-
-            if not bought_any:
-                print("🔎 No strong signals right now. Waiting...")
-
+            order = api.submit_order(
+                symbol=symbol,
+                notional=trade_size,
+                side="buy",
+                type="market",
+                time_in_force="day"
+            )
+            print(f"✅ ORDER SUCCESS: {symbol}")
         except Exception as e:
-            import traceback
-            print(f"❌ Loop error: {e}")
-            traceback.print_exc()
-
-        print(f"💓 Loop iteration complete. Sleeping {RUN_EVERY_SECONDS}s...")
-        time.sleep(RUN_EVERY_SECONDS)
-
-if __name__ == "__main__":
-    main()
+            print(f"❌ ORDER FAILED: {symbol}")
+            print(f"ERROR: {e}")
+            # Prevent crash loop
+            continue
+    else:
+        print(f"Skipping {symbol}: signal score below minimum ({MIN_SIGNAL_SCORE}).")
