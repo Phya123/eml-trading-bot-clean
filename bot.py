@@ -517,6 +517,79 @@ def handle_spacex(price, equity, buying_power=None):
 
 
 # ==========================================
+# MARKET HOURS & TRADING DAYS VALIDATION
+# ==========================================
+
+# US Market Holidays 2026
+US_MARKET_HOLIDAYS_2026 = [
+    (1, 1),    # New Year's Day
+    (1, 19),   # MLK Jr. Day
+    (2, 16),   # Presidents' Day
+    (3, 27),   # Good Friday
+    (5, 25),   # Memorial Day
+    (7, 3),    # Independence Day (observed, market closed Fri 7/3)
+    (9, 7),    # Labor Day
+    (11, 26),  # Thanksgiving
+    (12, 25),  # Christmas
+]
+
+
+def is_trading_day(now=None):
+    """Check if today is a trading day (not weekend or US market holiday)."""
+    now = now or _now_et()
+    
+    # Check weekends (Monday=0, Sunday=6)
+    if now.weekday() >= 5:  # 5=Saturday, 6=Sunday
+        return False
+    
+    # Check US market holidays
+    if (now.month, now.day) in US_MARKET_HOLIDAYS_2026:
+        return False
+    
+    return True
+
+
+def is_market_open(now=None):
+    """Check if the market is currently open (9:30 AM - 4:00 PM ET, trading days only)."""
+    now = now or _now_et()
+    
+    # First check if it's a trading day
+    if not is_trading_day(now):
+        return False
+    
+    # Check regular market hours: 9:30 AM to 4:00 PM ET
+    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+    market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+    
+    return market_open <= now < market_close
+
+
+def time_until_market_open(now=None):
+    """Calculate minutes until market opens."""
+    now = now or _now_et()
+    
+    # If market is currently open, return 0
+    if is_market_open(now):
+        return 0
+    
+    # Check if today is a trading day
+    if is_trading_day(now):
+        # Market opens at 9:30 AM ET
+        market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+        if now < market_open:
+            return (market_open - now).total_seconds() / 60
+    
+    # Find next trading day
+    next_day = now + timedelta(days=1)
+    while not is_trading_day(next_day):
+        next_day += timedelta(days=1)
+    
+    # Market opens at 9:30 AM ET on the next trading day
+    next_market_open = next_day.replace(hour=9, minute=30, second=0, microsecond=0)
+    return (next_market_open - now).total_seconds() / 60
+
+
+# ==========================================
 # INITIALIZE ON STARTUP
 # ==========================================
 
@@ -673,9 +746,31 @@ def main_trading_loop():
     cycle_count = 0
     while True:
         try:
+            now = _now_et()
             cycle_count += 1
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"\n--- Trading Cycle #{cycle_count} ({now}) ---")
+            now_str = now.strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Check if market is open
+            if not is_market_open(now):
+                is_trading = is_trading_day(now)
+                if is_trading:
+                    # Market is closed but it's a trading day
+                    minutes_until = time_until_market_open(now)
+                    print(f"[{now_str}] Market closed. Will open in {minutes_until:.0f} minutes. Sleeping...")
+                else:
+                    # Not a trading day
+                    day_name = now.strftime("%A")
+                    if now.weekday() >= 5:
+                        print(f"[{now_str}] {day_name} - Market closed (weekend). Sleeping...")
+                    else:
+                        print(f"[{now_str}] Market holiday ({day_name}). Sleeping...")
+                
+                # Sleep longer when market is closed
+                sleep_time = min(300, max(60, int(time_until_market_open(now) * 60)))
+                time.sleep(sleep_time)
+                continue
+            
+            print(f"\n--- Trading Cycle #{cycle_count} ({now_str}) ---")
             
             # Update open positions
             global open_positions
