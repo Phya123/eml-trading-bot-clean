@@ -22,6 +22,8 @@ A risk-managed automated trading engine for equities & ETFs, deployed 24/7 on Ra
 - **Daily budget cap:** prevents overspending/overtrading
 - **Daily stop logic:** can pause trading after hitting profit target or risk limit
 - **Order safety checks:** avoids unsafe notional sizing when buying power is low
+- **Debug/trial mode:** set `FORCE_TRADE=true` to let the bot buy a test position even if no strong signal is present
+- **Force symbol:** optionally set `FORCE_TRADE_SYMBOL=SPY` to force a test buy for a single symbol
 
 ## Who it's for
 - Traders who want **automation with discipline**
