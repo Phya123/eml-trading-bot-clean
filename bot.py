@@ -233,8 +233,8 @@ def calculate_signal(symbol, debug=False):
 
     return round(signal_score, 4)
 
-MIN_SIGNAL_SCORE = 0.5
-SELL_SIGNAL_SCORE = 0.35  # Sell when signal drops below this
+MIN_SIGNAL_SCORE = 0.40  # Lowered from 0.5 for more trading opportunities
+SELL_SIGNAL_SCORE = 0.30  # Lowered from 0.35 to hold positions longer
 PROFIT_TARGET_PCT = 0.03  # Take profit at 3%
 STOP_LOSS_PCT = 0.02  # Stop loss at 2%
 CHECK_INTERVAL_SECONDS = 60  # Check signals every 60 seconds
