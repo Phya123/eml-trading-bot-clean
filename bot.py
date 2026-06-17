@@ -11,6 +11,41 @@ TRADE_LOG_FILE = "trade_log.csv"
 
 
 # ==========================================
+# RETRY LOGIC FOR API REQUESTS
+# ==========================================
+
+def retry_api_call(func, max_retries=3, retry_delay=1.0, backoff_factor=2.0):
+    """
+    Retry an API call with exponential backoff.
+    
+    Args:
+        func: Callable that makes the API request
+        max_retries: Maximum number of retry attempts
+        retry_delay: Initial delay between retries in seconds
+        backoff_factor: Multiplier for delay after each retry
+    
+    Returns:
+        Result of func if successful, None if all retries fail
+    """
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                wait_time = retry_delay * (backoff_factor ** attempt)
+                print(f"  API request failed (attempt {attempt + 1}/{max_retries}): {e}")
+                print(f"  Retrying in {wait_time:.1f} seconds...")
+                time.sleep(wait_time)
+            else:
+                print(f"  API request failed after {max_retries} attempts: {e}")
+    
+    return None
+
+
+# ==========================================
 # CREATE CSV FILE IF IT DOESN'T EXIST
 # ==========================================
 
@@ -358,8 +393,8 @@ def _get_spcx_quote_data():
 
 def _has_spcx_position():
     try:
-        api.get_position(SPACEX_SYMBOL)
-        return True
+        result = retry_api_call(lambda: api.get_position(SPACEX_SYMBOL))
+        return result is not None
     except Exception:
         return False
 
@@ -606,6 +641,15 @@ BASE_URL = 'https://paper-api.alpaca.markets'  # Use live URL for live trading
 
 api = tradeapi.REST(API_KEY, API_SECRET, BASE_URL, api_version='v2')
 
+# Validate API credentials at startup
+if API_KEY == 'your_api_key' or API_SECRET == 'your_secret':
+    print("\n❌ ERROR: Missing Alpaca API credentials!")
+    print("Please set environment variables:")
+    print("  export ALPACA_API_KEY='your_real_key'")
+    print("  export ALPACA_API_SECRET='your_real_secret'")
+    print("\nBot will not trade without valid credentials.\n")
+    raise RuntimeError("Invalid API credentials")
+
 if SPACEX_MODE:
     try:
         SPACEX_ASSET = api.get_asset(SPACEX_SYMBOL)
@@ -627,6 +671,61 @@ if SPACEX_MODE:
 symbols = ['SPY', 'QQQ', 'XLE']
 trade_size = 100  # Notional value in dollars
 open_positions = {}
+
+
+def force_buy(symbol, amount=None):
+    """Force a buy order for a specific symbol, bypassing signal requirements."""
+    try:
+        if amount is None:
+            amount = trade_size
+        
+        current_trade = api.get_latest_trade(symbol)
+        current_price = float(current_trade.price)
+        
+        order = api.submit_order(
+            symbol=symbol,
+            notional=amount,
+            side="buy",
+            type="market",
+            time_in_force="day"
+        )
+        qty = amount / current_price if current_price > 0 else 0
+        print(f"✅ FORCED BUY: {symbol} | Amount: ${amount:.2f} | Price: ${current_price:.2f} | Qty: {qty:.4f}")
+        log_trade(symbol, "BUY", current_price, None, qty, 0, "FORCED BUY")
+        return True
+    except Exception as e:
+        print(f"❌ FORCED BUY FAILED: {symbol} - {e}")
+        return False
+
+
+def force_sell(symbol):
+    """Force a sell order for a specific symbol, selling entire position."""
+    try:
+        position = retry_api_call(lambda: api.get_position(symbol))
+        if position is None:
+            print(f"❌ FORCED SELL FAILED: {symbol} - Could not retrieve position after retries")
+            return False
+        
+        qty = float(position.qty)
+        entry_price = float(position.avg_entry_price)
+        
+        current_trade = api.get_latest_trade(symbol)
+        current_price = float(current_trade.price)
+        
+        order = api.submit_order(
+            symbol=symbol,
+            qty=qty,
+            side="sell",
+            type="market",
+            time_in_force="day"
+        )
+        pnl = (current_price - entry_price) * qty
+        print(f"✅ FORCED SELL: {symbol} | Qty: {qty:.4f} | Price: ${current_price:.2f} | PnL: ${pnl:.2f}")
+        log_trade(symbol, "SELL", entry_price, current_price, qty, pnl, "FORCED SELL")
+        return True
+    except Exception as e:
+        print(f"❌ FORCED SELL FAILED: {symbol} - {e}")
+        return False
 
 
 def should_sell_position(symbol, entry_price, current_price):
@@ -652,7 +751,7 @@ def should_sell_position(symbol, entry_price, current_price):
 def manage_positions():
     """Check open positions and sell if conditions are met."""
     try:
-        positions = api.list_positions()
+        positions = retry_api_call(lambda: api.list_positions())
         if not positions:
             return
         
@@ -710,8 +809,15 @@ def check_and_execute_trades():
         
         if buy_decision:
             any_buy_signal = True
+            current_price = details.get('latest_price', 0)
+            
+            # VALIDATE: Ensure price data is available before submitting order
+            if current_price <= 0:
+                print(f"⚠️  SKIPPED {symbol}: No valid price data available")
+                print(f"  Signal was strong ({signal_score:.4f}) but market data incomplete. Will retry next cycle.\n")
+                continue
+            
             try:
-                current_price = details.get('latest_price', 0)
                 order = api.submit_order(
                     symbol=symbol,
                     notional=trade_size,
@@ -719,8 +825,9 @@ def check_and_execute_trades():
                     type="market",
                     time_in_force="day"
                 )
-                print(f"✅ BUY ORDER SUBMITTED: {symbol}")
-                log_trade(symbol, "BUY", current_price, None, trade_size / current_price if current_price > 0 else 0, 0, "Signal threshold exceeded")
+                qty = trade_size / current_price if current_price > 0 else 0
+                print(f"✅ BUY ORDER SUBMITTED: {symbol} | Qty: {qty:.4f} | Price: ${current_price:.2f}")
+                log_trade(symbol, "BUY", current_price, None, qty, 0, "Signal threshold exceeded")
             except Exception as e:
                 print(f"❌ BUY ORDER FAILED: {symbol}")
                 print(f"ERROR: {e}")
@@ -775,13 +882,13 @@ def main_trading_loop():
             # Update open positions
             global open_positions
             try:
-                positions = api.list_positions()
+                positions = retry_api_call(lambda: api.list_positions())
                 open_positions = {
                     p.symbol: {
                         "qty": float(p.qty),
                         "avg_entry": float(p.avg_entry_price)
                     }
-                    for p in positions
+                    for p in (positions or [])
                 }
                 if open_positions:
                     print(f"Open positions: {list(open_positions.keys())}")
@@ -823,6 +930,27 @@ try:
     run_diagnostic_scan(['SPY', 'QQQ', 'XLE', 'SPCX'])
 except Exception as e:
     print(f"Diagnostic scan failed: {e}")
+
+# Check for forced buy/sell commands from environment variables
+# Usage: FORCE_BUY="SPY:500" FORCE_SELL="QQQ" python bot.py
+force_buy_cmd = os.getenv('FORCE_BUY', '').strip()
+force_sell_cmd = os.getenv('FORCE_SELL', '').strip()
+
+if force_buy_cmd:
+    parts = force_buy_cmd.split(':')
+    symbol = parts[0].strip()
+    amount = float(parts[1]) if len(parts) > 1 else trade_size
+    print(f"\n🔄 Executing forced buy: {symbol} (${amount:.2f})")
+    force_buy(symbol, amount)
+    print()
+
+if force_sell_cmd:
+    parts = force_sell_cmd.split(',')
+    for symbol in parts:
+        symbol = symbol.strip()
+        print(f"\n🔄 Executing forced sell: {symbol}")
+        force_sell(symbol)
+    print()
 
 # Start main trading loop
 main_trading_loop()
