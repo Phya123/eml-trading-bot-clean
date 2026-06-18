@@ -104,17 +104,18 @@ def _calculate_rsi(close_series, period=14):
 
 
 def _get_bars_dataframe(symbol, limit=60):
-    # Try 1-minute bars first
     for timeframe in ["1Min", "5Min", "1Day"]:
         try:
-            bars = api.get_bars(symbol, timeframe, limit=limit, adjustment='all')
+            # We added feed='iex' at the end of the parameters below:
+            bars = api.get_bars(symbol, timeframe, limit=limit, adjustment='all', feed='iex')
             df = bars.df
             if df is not None and not df.empty:
                 if isinstance(df.index, pd.MultiIndex):
                     df = df.xs(symbol, level=0)
-                print(f"✅ Successfully loaded historical data for {symbol} using {timeframe} bars.")
+                print(f"✅ Loaded historical data for {symbol} using {timeframe} bars.")
                 return df.sort_index()
-        except Exception:
+        except Exception as data_error:
+            print(f"⚠️ Debug {symbol} ({timeframe}): {data_error}")
             continue
     
     print(f"❌ {symbol} - All market data attempts failed.")
