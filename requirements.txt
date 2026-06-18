@@ -1,4 +1,4 @@
-alpaca-py
+git+https://github.com/alpacahq/alpaca-trade-api-python.git
 requests
 pandas
 numpy
