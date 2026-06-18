@@ -260,7 +260,7 @@ def _get_rejection_reason(score, details):
         reasons.append(f"low relative volume (vol_ratio={details.get('volume_ratio'):.2f})")
 
     if not reasons:
-        return "Signal below threshold"
+        return "Strong Buy Signal"
     return "; ".join(reasons)
 
 
