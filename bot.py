@@ -104,7 +104,7 @@ def _calculate_rsi(close_series, period=14):
 
 
 def _get_bars_dataframe(symbol, limit=60):
-    ttry:
+    try:
         # Pull 1-minute bars
         bars = api.get_bars(symbol, "1Min", limit=limit, adjustment='all')
         
@@ -114,7 +114,7 @@ def _get_bars_dataframe(symbol, limit=60):
         if data_frame is None or data_frame.empty:
         return None
         
-    eexcept Exception as e:
+    except Exception as e:
         print(f"❌ {symbol} market data fetch failed: {e}")
         return None
 
