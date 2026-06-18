@@ -104,18 +104,21 @@ def _calculate_rsi(close_series, period=14):
 
 
 def _get_bars_dataframe(symbol, limit=60):
-    try:
-        bars = api.get_bars(symbol, "1Min", limit=limit, adjustment='all')
-        df = bars.df
-        if df is None or df.empty:
-            return None
-        if isinstance(df.index, pd.MultiIndex):
-            df = df.xs(symbol, level=0)
-        return df.sort_index()
-    except Exception as e:
-        print(f"❌ {symbol} data error: {e}")
-        return None
-
+    # Try 1-minute bars first
+    for timeframe in ["1Min", "5Min", "1Day"]:
+        try:
+            bars = api.get_bars(symbol, timeframe, limit=limit, adjustment='all')
+            df = bars.df
+            if df is not None and not df.empty:
+                if isinstance(df.index, pd.MultiIndex):
+                    df = df.xs(symbol, level=0)
+                print(f"✅ Successfully loaded historical data for {symbol} using {timeframe} bars.")
+                return df.sort_index()
+        except Exception:
+            continue
+    
+    print(f"❌ {symbol} - All market data attempts failed.")
+    return None
 def calculate_signal(symbol, debug=False):
     if debug:
         print(f"Calculating signal for {symbol}")
