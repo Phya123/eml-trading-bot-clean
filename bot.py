@@ -104,17 +104,18 @@ def _calculate_rsi(close_series, period=14):
 
 
 def _get_bars_dataframe(symbol, limit=60):
-    try:
-        bars = api.get_bars(symbol, "1Day", limit=limit)
-    except Exception as primary_error:
-        print(f"{symbol} market data fetch failed: {primary_error}")
+    ttry:
+        # Pull 1-minute bars
+        bars = api.get_bars(symbol, "1Min", limit=limit, adjustment='all')
+        
+        # Safely convert Alpaca's bar data collection straight into a Pandas DataFrame
+        data_frame = bars.df
+        
+        if data_frame is None or data_frame.empty:
         return None
-
-    if bars is None:
-        return None
-
-    data_frame = bars.df if hasattr(bars, "df") else pd.DataFrame(bars)
-    if data_frame is None or data_frame.empty:
+        
+    eexcept Exception as e:
+        print(f"❌ {symbol} market data fetch failed: {e}")
         return None
 
     if isinstance(data_frame.index, pd.MultiIndex):
