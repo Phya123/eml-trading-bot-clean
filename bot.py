@@ -105,46 +105,17 @@ def _calculate_rsi(close_series, period=14):
 
 def _get_bars_dataframe(symbol, limit=60):
     try:
-        # Pull 1-minute bars
         bars = api.get_bars(symbol, "1Min", limit=limit, adjustment='all')
-        
-        # Safely convert Alpaca's bar data collection straight into a DataFrame
-        data_frame = bars.df
-        
-        if data_frame is None or data_frame.empty:
+        df = bars.df
+        if df is None or df.empty:
             return None
-            
-        # The cleaning logic MUST stay inside the try block to use data_frame safely
-        if isinstance(data_frame.index, pd.MultiIndex):
-            index_names = list(data_frame.index.names)
-            try:
-                if "symbol" in index_names:
-                    data_frame = data_frame.xs(symbol, level="symbol")
-                else:
-                    data_frame = data_frame.xs(symbol, level=0)
-            except Exception:
-                reset_frame = data_frame.reset_index()
-                if "symbol" in reset_frame.columns:
-                    data_frame = reset_frame[reset_frame["symbol"] == symbol]
-                else:
-                    data_frame = reset_frame
-
-        if "symbol" in data_frame.columns:
-            data_frame = data_frame[data_frame["symbol"] == symbol]
-
-        if data_frame.empty:
-            return None
-
-        if 'timestamp' in data_frame.columns:
-            data_frame = data_frame.sort_values("timestamp")
-        else:
-            data_frame = data_frame.sort_index()
-
-        return data_frame
-
+        if isinstance(df.index, pd.MultiIndex):
+            df = df.xs(symbol, level=0)
+        return df.sort_index()
     except Exception as e:
-        print(f"❌ {symbol} market data fetch failed: {e}")
+        print(f"❌ {symbol} data error: {e}")
         return None
+
 def calculate_signal(symbol, debug=False):
     if debug:
         print(f"Calculating signal for {symbol}")
