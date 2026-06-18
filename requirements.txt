@@ -2,3 +2,4 @@ alpaca-trade-api==3.0.2
 requests
 pandas
 numpy
+PyYAML==6.0.1
