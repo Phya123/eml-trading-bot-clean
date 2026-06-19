@@ -828,45 +828,71 @@ def check_and_execute_trades():
     # Update open positions
         global open_positions
         try:
-            positions = retry_api_call(lambda: api.list_positions())
-            open_positions = {
-                p.symbol: {
-                    "qty": float(p.qty),
-                    "avg_entry": float(p.avg_entry_price)
-                }
-                for p in (positions or [])
-            }
-            if open_positions:
-                print(f"💼 Open positions: {list(open_positions.keys())}")
-        except Exception as e:
-            print(f"⚠️ Position sync failed: {e}")
-            open_positions = {}
-# Check and sell existing positions
-        manage_positions()
+            def main_trading_loop():
+    """Main continuous trading loop."""
+    print("🚀 Starting main trading loop...")
+    print(f"Monitoring symbols: {symbols}")
+    print(f"Check interval: {CHECK_INTERVAL_SECONDS} seconds")
+    print(f"Min buy signal: {MIN_SIGNAL_SCORE:.2f}")
+    print(f"Sell signal: {SELL_SIGNAL_SCORE:.2f}")
+    print(f"Profit target: {PROFIT_TARGET_PCT * 100:.1f}%")
+    print(f"Stop loss: {STOP_LOSS_PCT * 100:.1f}%\n")
 
-        # Check for new buy signals
-        check_and_execute_trades()
+    cycle_count = 0
+    while True:
+        try:
+            now = _now_et()
+            cycle_count += 1
+            now_str = now.strftime("%Y-%m-%d %H:%M:%S")
 
-        # SpaceX special handling
-        if SPACEX_MODE:
+            # Check if market is open
+            if not is_market_open(now):
+                # Market is closed but it's a trading day
+                pass
+
+            # Update open positions
+            global open_positions
             try:
-                account = api.get_account()
-                equity = float(account.equity)
-                buying_power = float(account.buying_power)
-                spacex_price = float(api.get_latest_trade(SPACEX_SYMBOL).price)
-                handle_spacex(spacex_price, equity, buying_power)
+                positions = retry_api_call(lambda: api.list_positions())
+                open_positions = {
+                    p.symbol: {
+                        "qty": float(p.qty),
+                        "avg_entry": float(p.avg_entry_price)
+                    }
+                    for p in (positions or [])
+                }
+                if open_positions:
+                    print(f"💼 Open positions: {list(open_positions.keys())}")
             except Exception as e:
-                print(f"⚠️ SpaceX check failed: {e}")
+                print(f"⚠️ Position sync failed: {e}")
+                open_positions = {}
 
-        print(f"⏳ Sleeping for {CHECK_INTERVAL_SECONDS} seconds...")
-        time.sleep(CHECK_INTERVAL_SECONDS)
+            # Check and sell existing positions
+            manage_positions()
 
-    except KeyboardInterrupt:
-        print("\n🛑 Bot stopped by user.")
-        break
-    except Exception as e:
-        print(f"❌ Trading loop error: {e}")
-        time.sleep(CHECK_INTERVAL_SECONDS)
+            # Check for new buy signals
+            check_and_execute_trades()
+
+            # SpaceX special handling
+            if SPACEX_MODE:
+                try:
+                    account = api.get_account()
+                    equity = float(account.equity)
+                    buying_power = float(account.buying_power)
+                    spacex_price = float(api.get_latest_trade(SPACEX_SYMBOL).price)
+                    handle_spacex(spacex_price, equity, buying_power)
+                except Exception as e:
+                    print(f"⚠️ SpaceX check failed: {e}")
+
+            print(f"⏳ Sleeping for {CHECK_INTERVAL_SECONDS} seconds...")
+            time.sleep(CHECK_INTERVAL_SECONDS)
+
+        except KeyboardInterrupt:
+            print("\n🛑 Bot stopped by user.")
+            break
+        except Exception as e:
+            print(f"❌ Trading loop error: {e}")
+            time.sleep(CHECK_INTERVAL_SECONDS)
 
 # Run initial diagnostic
 print("Running initial diagnostic scan...\n")
@@ -882,7 +908,7 @@ force_sell_cmd = os.getenv('FORCE_SELL', '').strip()
 if force_buy_cmd:
     parts = force_buy_cmd.split(':')
     symbol = parts[0].strip()
-    amount = float(parts[1]) if len(parts) > 1 else trade_size
+    amount = float(parts[1]) if len(parts) > 1 else 1
     print(f"\n📥 Executing forced buy: {symbol} (${amount:.2f})")
     force_buy(symbol, amount)
     print()
@@ -897,5 +923,3 @@ if force_sell_cmd:
 
 # Start main trading loop
 main_trading_loop()
-        
-
