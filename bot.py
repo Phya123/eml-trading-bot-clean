@@ -769,8 +769,8 @@ def check_and_execute_trades():
     for symbol in symbols:
         # --- SKIP IF ORDER IS ALREADY PENDING ---
         try:
-            open_orders = api.list_orders(status='open')
-            pending_symbols = [o.symbol for o in open_orders]
+open_orders = api.list_orders(status='open')
+                        pending_symbols = [o.symbol for o in open_orders]
             if symbol in pending_symbols:
                 print(f"⏳ Order already pending for {symbol}. Skipping loop to avoid duplicates.")
                 continue
