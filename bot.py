@@ -766,7 +766,7 @@ def check_and_execute_trades():
     """Check signals and execute buy trades."""
     any_buy_signal = False
 
-for symbol in symbols:
+    for symbol in symbols:
         try:
             orders = api.list_orders(status='open')
             if symbol in [o.symbol for o in orders]:
@@ -783,28 +783,29 @@ for symbol in symbols:
         if trade_size < 1:
             print("Trade size too small...")
             continue
+
         signal_score, details = calculate_signal(symbol, debug=True)
         buy_decision = signal_score >= MIN_SIGNAL_SCORE
-        
-        print(f"{symbol}")
-        print(f"  Price: {details.get('latest_price', 'unavailable'):.2f}" if details.get('latest_price') is not None else "  Price: unavailable")
-        print(f"  Signal Score: {signal_score:.4f}")
-        print(f"  Minimum Required: {MIN_SIGNAL_SCORE:.2f}")
-        print(f"  Decision: {'YES' if buy_decision else 'NO'}")
-        
+
+        print(f"({symbol})")
+        print(f" Price: {details.get('latest_price', 'unavailable') if details.get('latest_price') is not None else 'unavailable'}")
+        print(f" Signal Score: {signal_score:.4f}")
+        print(f" Minimum Required: {MIN_SIGNAL_SCORE:.2f}")
+        print(f" Decision: {'YES' if buy_decision else 'NO'}")
+
         if not buy_decision:
-            print(f"  Reason: {_get_rejection_reason(signal_score, details)}")
-        
+            print(f" Reason: {_get_rejection_reason(signal_score, details)}")
+
         if buy_decision:
             any_buy_signal = True
             current_price = details.get('latest_price', 0)
-            
+
             # VALIDATE: Ensure price data is available before submitting order
             if current_price <= 0:
-                print(f"⚠️  SKIPPED {symbol}: No valid price data available")
-                print(f"  Signal was strong ({signal_score:.4f}) but market data incomplete. Will retry next cycle.\n")
+                print(f"⚠️ SKIPPED {symbol}: No valid price data available")
+                print(f" Signal was strong ({signal_score:.4f}) but market data incomplete. Will retry next cycle.\n")
                 continue
-            
+
             try:
                 order = api.submit_order(
                     symbol=symbol,
@@ -821,88 +822,45 @@ for symbol in symbols:
                 print(f"ERROR: {e}")
         else:
             print(f"Skipping {symbol}: signal score below minimum ({MIN_SIGNAL_SCORE}).")
-        
+
         print()
-    
-    if not any_buy_signal:
-        print("🔊 No strong buy signals. Monitoring...\n")
 
-
-def main_trading_loop():
-    """Main continuous trading loop."""
-    print("🚀 Starting main trading loop...")
-    print(f"Monitoring symbols: {symbols}")
-    print(f"Check interval: {CHECK_INTERVAL_SECONDS} seconds")
-    print(f"Min buy signal: {MIN_SIGNAL_SCORE:.2f}")
-    print(f"Sell signal: {SELL_SIGNAL_SCORE:.2f}")
-    print(f"Profit target: {PROFIT_TARGET_PCT * 100:.1f}%")
-    print(f"Stop loss: {STOP_LOSS_PCT * 100:.1f}%\n")
-    
-    cycle_count = 0
-    while True:
+    # Update open positions
+        global open_positions
         try:
-            now = _now_et()
-            cycle_count += 1
-            now_str = now.strftime("%Y-%m-%d %H:%M:%S")
-            
-            # Check if market is open
-            if not is_market_open(now):
-                is_trading = is_trading_day(now)
-                if is_trading:
-                    # Market is closed but it's a trading day
-                    minutes_until = time_until_market_open(now)
-                    print(f"[{now_str}] Market closed. Will open in {minutes_until:.0f} minutes. Sleeping...")
-                else:
-                    # Not a trading day
-                    day_name = now.strftime("%A")
-                    if now.weekday() >= 5:
-                        print(f"[{now_str}] {day_name} - Market closed (weekend). Sleeping...")
-                    else:
-                        print(f"[{now_str}] Market holiday ({day_name}). Sleeping...")
-                
-                # Sleep longer when market is closed
-                sleep_time = min(300, max(60, int(time_until_market_open(now) * 60)))
-                time.sleep(sleep_time)
-                continue
-            
-            print(f"\n--- Trading Cycle #{cycle_count} ({now_str}) ---")
-            
-            # Update open positions
-            global open_positions
-            try:
-                positions = retry_api_call(lambda: api.list_positions())
-                open_positions = {
-                    p.symbol: {
-                        "qty": float(p.qty),
-                        "avg_entry": float(p.avg_entry_price)
-                    }
-                    for p in (positions or [])
+            positions = retry_api_call(lambda: api.list_positions())
+            open_positions = {
+                p.symbol: {
+                    "qty": float(p.qty),
+                    "avg_entry": float(p.avg_entry_price)
                 }
-                if open_positions:
-                    print(f"Open positions: {list(open_positions.keys())}")
+                for p in (positions or [])
+            }
+            if open_positions:
+                print(f"💼 Open positions: {list(open_positions.keys())}")
+        except Exception as e:
+            print(f"⚠️ Position sync failed: {e}")
+            open_positions = {}
+
+        # Check and sell existing positions
+        manage_positions()
+
+        # Check for new buy signals
+        check_and_execute_trades()
+
+        # SpaceX special handling
+        if SPACEX_MODE:
+            try:
+                account = api.get_account()
+                equity = float(account.equity)
+                buying_power = float(account.buying_power)
+                spacex_price = float(api.get_latest_trade(SPACEX_SYMBOL).price)
+                handle_spacex(spacex_price, equity, buying_power)
             except Exception as e:
-                print(f"Position sync failed: {e}")
-                open_positions = {}
-            
-            # Check and sell existing positions
-            manage_positions()
-            
-            # Check for new buy signals
-            check_and_execute_trades()
-            
-            # SpaceX special handling
-            if SPACEX_MODE:
-                try:
-                    account = api.get_account()
-                    equity = float(account.equity)
-                    buying_power = float(account.buying_power)
-                    spacex_price = float(api.get_latest_trade(SPACEX_SYMBOL).price)
-                    handle_spacex(spacex_price, equity, buying_power)
-                except Exception as e:
-                    print(f"SPACEX check failed: {e}")
-            
-            print(f"Sleeping for {CHECK_INTERVAL_SECONDS} seconds...")
-            time.sleep(CHECK_INTERVAL_SECONDS)
+                print(f"⚠️ SpaceX check failed: {e}")
+
+        print(f"⏳ Sleeping for {CHECK_INTERVAL_SECONDS} seconds...")
+        time.sleep(CHECK_INTERVAL_SECONDS)ime.sleep(CHECK_INTERVAL_SECONDS)
             
         except KeyboardInterrupt:
             print("\n⛔ Bot stopped by user.")
