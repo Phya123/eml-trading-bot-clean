@@ -766,7 +766,8 @@ def check_and_execute_trades():
     """Check signals and execute buy trades."""
     any_buy_signal = False
     
-    for symbol in symbols:
+    
+        for symbol in symbols:
         # --- SKIP IF ORDER IS ALREADY PENDING ---
         try:
             open_orders = api.list_orders(status='open')
@@ -776,13 +777,17 @@ def check_and_execute_trades():
                 continue
         except Exception as e:
             print(f"⚠️ Could not check open orders: {e}")
-        if trade_size < 1:
-            print("Trade size too small. Skipping.")
-            continue
 
-        # Skip if already in position
-        if symbol in open_positions:
+        # --- RESTORE ORIGINAL SYSTEM LOGIC BELOW ---
+        if symbol == SPACEX_SYMBOL and SPACEX_MODE:
+            trade_size = SPACEX_MAX_ALLOC
+        else:
+            trade_size = 1
+
+        if trade_size < 1:
+            print("Trade size too small...")
             continue
+        
 
         signal_score, details = calculate_signal(symbol, debug=True)
         buy_decision = signal_score >= MIN_SIGNAL_SCORE
