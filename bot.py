@@ -860,7 +860,7 @@ def check_and_execute_trades():
                 print(f"⚠️ SpaceX check failed: {e}")
 
         print(f"⏳ Sleeping for {CHECK_INTERVAL_SECONDS} seconds...")
-        time.sleep(CHECK_INTERVAL_SECONDS)ime.sleep(CHECK_INTERVAL_SECONDS)
+        time.sleep(CHECK_INTERVAL_SECONDS)
             
         except KeyboardInterrupt:
             print("\n⛔ Bot stopped by user.")
