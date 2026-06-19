@@ -841,8 +841,7 @@ def check_and_execute_trades():
         except Exception as e:
             print(f"⚠️ Position sync failed: {e}")
             open_positions = {}
-
-        # Check and sell existing positions
+# Check and sell existing positions
         manage_positions()
 
         # Check for new buy signals
@@ -861,14 +860,13 @@ def check_and_execute_trades():
 
         print(f"⏳ Sleeping for {CHECK_INTERVAL_SECONDS} seconds...")
         time.sleep(CHECK_INTERVAL_SECONDS)
-            
-        except KeyboardInterrupt:
-            print("\n⛔ Bot stopped by user.")
-            break
-        except Exception as e:
-            print(f"❌ Trading loop error: {e}")
-            time.sleep(CHECK_INTERVAL_SECONDS)
 
+    except KeyboardInterrupt:
+        print("\n🛑 Bot stopped by user.")
+        break
+    except Exception as e:
+        print(f"❌ Trading loop error: {e}")
+        time.sleep(CHECK_INTERVAL_SECONDS)
 
 # Run initial diagnostic
 print("Running initial diagnostic scan...\n")
@@ -878,7 +876,6 @@ except Exception as e:
     print(f"Diagnostic scan failed: {e}")
 
 # Check for forced buy/sell commands from environment variables
-# Usage: FORCE_BUY="SPY:500" FORCE_SELL="QQQ" python bot.py
 force_buy_cmd = os.getenv('FORCE_BUY', '').strip()
 force_sell_cmd = os.getenv('FORCE_SELL', '').strip()
 
@@ -886,7 +883,7 @@ if force_buy_cmd:
     parts = force_buy_cmd.split(':')
     symbol = parts[0].strip()
     amount = float(parts[1]) if len(parts) > 1 else trade_size
-    print(f"\n🔄 Executing forced buy: {symbol} (${amount:.2f})")
+    print(f"\n📥 Executing forced buy: {symbol} (${amount:.2f})")
     force_buy(symbol, amount)
     print()
 
@@ -894,9 +891,11 @@ if force_sell_cmd:
     parts = force_sell_cmd.split(',')
     for symbol in parts:
         symbol = symbol.strip()
-        print(f"\n🔄 Executing forced sell: {symbol}")
+        print(f"\n📤 Executing forced sell: {symbol}")
         force_sell(symbol)
     print()
 
 # Start main trading loop
 main_trading_loop()
+        
+
