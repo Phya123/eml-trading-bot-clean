@@ -85,26 +85,23 @@ def log_trade(symbol, side, entry_price, exit_price, quantity, pnl, reason):
         ])
     print(f"📈 Trade logged: {symbol} | PnL={pnl}")
 
-
-def _clamp(value, minimum=0.0, maximum=1.0):
-    clamped = max(minimum, min(maximum, value))
-    # If the bot outputs a tiny dollar allocation under $1.00, bump it to $10.00
-    if 0.0 < clamped < 1.00:
-        return 10.00
-    return clamped
-    def _calculate_rsi(close_series, period=14):
-      delta = close_series.diff()
+def _calculate_rsi(close_series, period=14):
+    delta = close_series.diff()
     gains = delta.clip(lower=0)
     losses = -delta.clip(upper=0)
-
+    
     avg_gain = gains.ewm(alpha=1 / period, adjust=False).mean()
     avg_loss = losses.ewm(alpha=1 / period, adjust=False).mean()
-
-    relative_strength = avg_gain / avg_loss.replace(0, np.nan)
+    
+    relative_strength = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + relative_strength))
     return rsi.fillna(50.0)
 
-
+def _clamp(value, minimum=0.0, maximum=1.0):
+    clamped = max(minimum, min(maximum, value))
+    if 0.0 < clamped < 1.00:
+        return 10.00
+    return clamped
 def _get_bars_dataframe(symbol, limit=60):
     for timeframe in ["1Min", "5Min", "1Day"]:
         try:
