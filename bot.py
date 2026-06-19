@@ -829,44 +829,29 @@ def check_and_execute_trades():
         global open_positions
         try:
             def main_trading_loop():
-    """Main continuous trading loop."""
     print("🚀 Starting main trading loop...")
+    global symbols
     while True:
         try:
             now = _now_et()
-            if not is_market_open(now):
-                pass
-
+            if not is_market_open(now): pass
             global open_positions
             try:
                 positions = retry_api_call(lambda: api.list_positions())
-                open_positions = {
-                    p.symbol: {
-                        "qty": float(p.qty),
-                        "avg_entry": float(p.avg_entry_price)
-                    }
-                    for p in (positions or [])
-                }
+                open_positions = {p.symbol: {"qty": float(p.qty), "avg_entry": float(p.avg_entry_price)} for p in (positions or [])}
             except Exception as e:
                 print(f"⚠️ Position sync failed: {e}")
                 open_positions = {}
-
             manage_positions()
             check_and_execute_trades()
-
             if SPACEX_MODE:
                 try:
                     account = api.get_account()
-                    equity = float(account.equity)
-                    buying_power = float(account.buying_power)
                     spacex_price = float(api.get_latest_trade(SPACEX_SYMBOL).price)
-                    handle_spacex(spacex_price, equity, buying_power)
-                except Exception as e:
-                    print(f"⚠️ SpaceX check failed: {e}")
-
+                    handle_spacex(spacex_price, float(account.equity), float(account.buying_power))
+                except Exception as e: print(f"⚠️ SpaceX check failed: {e}")
             print(f"⏳ Sleeping for {CHECK_INTERVAL_SECONDS} seconds...")
             time.sleep(CHECK_INTERVAL_SECONDS)
-
         except KeyboardInterrupt:
             print("\n🛑 Bot stopped by user.")
             break
@@ -874,14 +859,10 @@ def check_and_execute_trades():
             print(f"❌ Trading loop error: {e}")
             time.sleep(CHECK_INTERVAL_SECONDS)
 
-# Run initial diagnostic
 print("Running initial diagnostic scan...\n")
-try:
-    run_diagnostic_scan(['SPY', 'QQQ', 'XLE', 'SPCX'])
-except Exception as e:
-    print(f"Diagnostic scan failed: {e}")
+try: run_diagnostic_scan(['SPY', 'QQQ', 'XLE', 'SPCX'])
+except Exception as e: print(f"Diagnostic scan failed: {e}")
 
-# Check for forced buy/sell commands from environment variables
 force_buy_cmd = os.getenv('FORCE_BUY', '').strip()
 force_sell_cmd = os.getenv('FORCE_SELL', '').strip()
 
@@ -893,10 +874,8 @@ if force_buy_cmd:
     force_buy(symbol, amount)
 
 if force_sell_cmd:
-    parts = force_sell_cmd.split(',')
-    for symbol in parts:
+    for symbol in force_sell_cmd.split(','):
         print(f"\n📤 Executing forced sell: {symbol.strip()}")
         force_sell(symbol.strip())
 
-# Start main trading loop
 main_trading_loop()
