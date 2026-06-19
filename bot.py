@@ -825,12 +825,8 @@ def check_and_execute_trades():
 
         print()
 
-    # Update open positions
-        global open_positions
-        try:
-            def main_trading_loop():
+    def main_trading_loop():
     print("🚀 Starting main trading loop...")
-    global symbols
     while True:
         try:
             now = _now_et()
