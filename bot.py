@@ -831,26 +831,12 @@ def check_and_execute_trades():
             def main_trading_loop():
     """Main continuous trading loop."""
     print("🚀 Starting main trading loop...")
-    print(f"Monitoring symbols: {symbols}")
-    print(f"Check interval: {CHECK_INTERVAL_SECONDS} seconds")
-    print(f"Min buy signal: {MIN_SIGNAL_SCORE:.2f}")
-    print(f"Sell signal: {SELL_SIGNAL_SCORE:.2f}")
-    print(f"Profit target: {PROFIT_TARGET_PCT * 100:.1f}%")
-    print(f"Stop loss: {STOP_LOSS_PCT * 100:.1f}%\n")
-
-    cycle_count = 0
     while True:
         try:
             now = _now_et()
-            cycle_count += 1
-            now_str = now.strftime("%Y-%m-%d %H:%M:%S")
-
-            # Check if market is open
             if not is_market_open(now):
-                # Market is closed but it's a trading day
                 pass
 
-            # Update open positions
             global open_positions
             try:
                 positions = retry_api_call(lambda: api.list_positions())
@@ -861,19 +847,13 @@ def check_and_execute_trades():
                     }
                     for p in (positions or [])
                 }
-                if open_positions:
-                    print(f"💼 Open positions: {list(open_positions.keys())}")
             except Exception as e:
                 print(f"⚠️ Position sync failed: {e}")
                 open_positions = {}
 
-            # Check and sell existing positions
             manage_positions()
-
-            # Check for new buy signals
             check_and_execute_trades()
 
-            # SpaceX special handling
             if SPACEX_MODE:
                 try:
                     account = api.get_account()
@@ -911,15 +891,12 @@ if force_buy_cmd:
     amount = float(parts[1]) if len(parts) > 1 else 1
     print(f"\n📥 Executing forced buy: {symbol} (${amount:.2f})")
     force_buy(symbol, amount)
-    print()
 
 if force_sell_cmd:
     parts = force_sell_cmd.split(',')
     for symbol in parts:
-        symbol = symbol.strip()
-        print(f"\n📤 Executing forced sell: {symbol}")
-        force_sell(symbol)
-    print()
+        print(f"\n📤 Executing forced sell: {symbol.strip()}")
+        force_sell(symbol.strip())
 
 # Start main trading loop
 main_trading_loop()
