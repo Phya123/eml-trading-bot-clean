@@ -823,39 +823,7 @@ def check_and_execute_trades():
         else:
             print(f"Skipping {symbol}: signal score below minimum ({MIN_SIGNAL_SCORE}).")
 
-        print()
-
-    def main_trading_loop():
-    print("🚀 Starting main trading loop...")
-    while True:
-        try:
-            now = _now_et()
-            if not is_market_open(now): pass
-            global open_positions
-            try:
-                positions = retry_api_call(lambda: api.list_positions())
-                open_positions = {p.symbol: {"qty": float(p.qty), "avg_entry": float(p.avg_entry_price)} for p in (positions or [])}
-            except Exception as e:
-                print(f"⚠️ Position sync failed: {e}")
-                open_positions = {}
-            manage_positions()
-            check_and_execute_trades()
-            if SPACEX_MODE:
-                try:
-                    account = api.get_account()
-                    spacex_price = float(api.get_latest_trade(SPACEX_SYMBOL).price)
-                    handle_spacex(spacex_price, float(account.equity), float(account.buying_power))
-                except Exception as e: print(f"⚠️ SpaceX check failed: {e}")
-            print(f"⏳ Sleeping for {CHECK_INTERVAL_SECONDS} seconds...")
-            time.sleep(CHECK_INTERVAL_SECONDS)
-        except KeyboardInterrupt:
-            print("\n🛑 Bot stopped by user.")
-            break
-        except Exception as e:
-            print(f"❌ Trading loop error: {e}")
-            time.sleep(CHECK_INTERVAL_SECONDS)
-
-print("Running initial diagnostic scan...\n")
+        print("Running initial diagnostic scan...\n")
 try: run_diagnostic_scan(['SPY', 'QQQ', 'XLE', 'SPCX'])
 except Exception as e: print(f"Diagnostic scan failed: {e}")
 
@@ -870,8 +838,20 @@ if force_buy_cmd:
     force_buy(symbol, amount)
 
 if force_sell_cmd:
-    for symbol in force_sell_cmd.split(','):
-        print(f"\n📤 Executing forced sell: {symbol.strip()}")
-        force_sell(symbol.strip())
+    for symbol in force_sell_cmd.split(','): print(f"\n📤 Executing forced sell: {symbol.strip()}"); force_sell(symbol.strip())
 
-main_trading_loop()
+print("🚀 Starting main trading loop...")
+while True:
+    try:
+        now = _now_et()
+        if not is_market_open(now): time.sleep(CHECK_INTERVAL_SECONDS); continue
+        try: positions = retry_api_call(lambda: api.list_positions()); open_positions = {p.symbol: {"qty": float(p.qty), "avg_entry": float(p.avg_entry_price)} for p in (positions or [])}
+        except Exception as e: print(f"⚠️ Position sync failed: {e}"); open_positions = {}
+        manage_positions()
+        check_and_execute_trades()
+        if SPACEX_MODE:
+            try: account = api.get_account(); handle_spacex(float(api.get_latest_trade(SPACEX_SYMBOL).price), float(account.equity), float(account.buying_power))
+            except Exception as e: print(f"⚠️ SpaceX check failed: {e}")
+        print(f"⏳ Sleeping for {CHECK_INTERVAL_SECONDS} seconds..."); time.sleep(CHECK_INTERVAL_SECONDS)
+    except KeyboardInterrupt: print("\n🛑 Bot stopped by user."); break
+    except Exception as e: print(f"❌ Trading loop error: {e}"); time.sleep(CHECK_INTERVAL_SECONDS)
