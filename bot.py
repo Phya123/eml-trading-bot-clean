@@ -92,14 +92,7 @@ def _clamp(value, minimum=0.0, maximum=1.0):
     if 0.0 < clamped < 1.00:
         return 10.00
     return clamped
-    # If the bot outputs a tiny dollar allocation under $1.00, bump it to $10.00
-    if 0.0 < clamped < 1.00:
-        return 10.00
-    return clamped
-
-
-def _calculate_rsi(close_series, period=14):
-    delta = close_series.diff()
+      delta = close_series.diff()
     gains = delta.clip(lower=0)
     losses = -delta.clip(upper=0)
 
