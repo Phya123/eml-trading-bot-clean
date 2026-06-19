@@ -765,9 +765,8 @@ def manage_positions():
 def check_and_execute_trades():
     """Check signals and execute buy trades."""
     any_buy_signal = False
-    
-    
-        for symbol in symbols:
+
+    for symbol in symbols:
         # --- SKIP IF ORDER IS ALREADY PENDING ---
         try:
             open_orders = api.list_orders(status='open')
@@ -787,7 +786,6 @@ def check_and_execute_trades():
         if trade_size < 1:
             print("Trade size too small...")
             continue
-        
 
         signal_score, details = calculate_signal(symbol, debug=True)
         buy_decision = signal_score >= MIN_SIGNAL_SCORE
