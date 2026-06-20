@@ -6,7 +6,19 @@ from zoneinfo import ZoneInfo
 import alpaca_trade_api as tradeapi
 import numpy as np
 import pandas as pd
+class RiskManager:
+    def __init__(self, account_equity=400.0, risk_per_trade=0.01):
+        self.equity = account_equity
+        self.risk_per_trade = risk_per_trade
 
+    def calculate_position_size(self, current_price, atr_value, atr_multiplier=2.0):
+        # Dollar amount to risk: 1% of your $400 = $4.00
+        risk_amount = self.equity * self.risk_per_trade
+        # The stop-loss zone based on volatility
+        stop_loss_distance = atr_value * atr_multiplier
+        if stop_loss_distance <= 0: return 1 # Default to 1 share if ATR is missing
+        shares = int(risk_amount / stop_loss_distance)
+        return max(shares, 1)
 TRADE_LOG_FILE = "trade_log.csv"
 
 
@@ -136,7 +148,9 @@ def calculate_signal(symbol, debug=False):
             print(f"{symbol} trend indicators: unavailable")
         return (0.0, {}) if debug else 0.0
 
-    close_prices = bars["close"].astype(float)
+    close_prices = bars["close"].astype(float)# Calculate Average True Range (ATR)
+bars['TR'] = bars[['high', 'low', 'close']].apply(lambda x: max(x['high']-x['low'], abs(x['high']-x['close']), abs(x['low']-x['close'])), axis=1)
+bars['ATR'] = bars['TR'].rolling(window=14).mean()
     latest_price = float(close_prices.iloc[-1])
     short_ema = float(close_prices.ewm(span=9, adjust=False).mean().iloc[-1])
     long_ema = float(close_prices.ewm(span=21, adjust=False).mean().iloc[-1])
@@ -650,54 +664,38 @@ if SPACEX_MODE:
 # Example symbols and trade size (customize as needed)
 symbols = ['SPY', 'QQQ', 'XLE']
 trade_size = 100  # Notional value in dollars
-open_positions = {}
-
-
 def force_buy(symbol, amount=None):
-    """Force a buy order for a specific symbol, bypassing signal requirements."""
+    """Force a buy order for a specific symbol."""
     try:
-        if amount is None:
-            amount = trade_size
+        # Get market data to access the ATR we calculated in calculate_signal
+        bars = _get_bars_dataframe(symbol, limit=60)
+        current_price = float(bars['close'].iloc[-1])
+        current_atr = float(bars['ATR'].iloc[-1]) # Uses the ATR you just added!
         
-        current_trade = api.get_latest_trade(symbol)
-        current_price = float(current_trade.price)
+        # Calculate quantity dynamically
+        qty = risk_engine.calculate_position_size(
+            current_price=current_price,
+            atr_value=current_atr
+        )
         
+        # Execute the order using the calculated quantity
         order = api.submit_order(
             symbol=symbol,
-            notional=amount,
-            side="buy",
-            type="market",
-            time_in_force="day"
+            qty=qty,
+            side='buy',
+            type='market',
+            time_in_force='day'
         )
-        qty = amount / current_price if current_price > 0 else 0
-        print(f"✅ FORCED BUY: {symbol} | Amount: ${amount:.2f} | Price: ${current_price:.2f} | Qty: {qty:.4f}")
+        
+        print(f"✅ FORCED BUY: {symbol} | Qty: {qty} | Price: {current_price}")
         log_trade(symbol, "BUY", current_price, None, qty, 0, "FORCED BUY")
         return True
     except Exception as e:
         print(f"❌ FORCED BUY FAILED: {symbol} - {e}")
         return False
-
-
-def force_sell(symbol):
-    """Force a sell order for a specific symbol, selling entire position."""
-    try:
-        position = retry_api_call(lambda: api.get_position(symbol))
-        if position is None:
-            print(f"❌ FORCED SELL FAILED: {symbol} - Could not retrieve position after retries")
-            return False
-        
-        qty = float(position.qty)
-        entry_price = float(position.avg_entry_price)
-        
-        current_trade = api.get_latest_trade(symbol)
-        current_price = float(current_trade.price)
-        
-        order = api.submit_order(
-            symbol=symbol,
-            qty=qty,
-            side="sell",
-            type="market",
-            time_in_force="day"
+            except Exception as e:
+        print(f"❌ FORCED BUY FAILED: {symbol} - {e}")
+        return False
         )
         pnl = (current_price - entry_price) * qty
         print(f"✅ FORCED SELL: {symbol} | Qty: {qty:.4f} | Price: ${current_price:.2f} | PnL: ${pnl:.2f}")
