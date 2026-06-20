@@ -148,9 +148,10 @@ def calculate_signal(symbol, debug=False):
             print(f"{symbol} trend indicators: unavailable")
         return (0.0, {}) if debug else 0.0
 
-    close_prices = bars["close"].astype(float)# Calculate Average True Range (ATR)
-bars['TR'] = bars[['high', 'low', 'close']].apply(lambda x: max(x['high']-x['low'], abs(x['high']-x['close']), abs(x['low']-x['close'])), axis=1)
-bars['ATR'] = bars['TR'].rolling(window=14).mean()
+    close_prices = bars['close'].astype(float)
+    bars['TR'] = bars[['high', 'low', 'close']].apply(lambda x: max(x['high']-x['low'], abs(x['high']-x['close']), abs(x['low']-x['close'])), axis=1)
+    bars['ATR'] = bars['TR'].rolling(window=14).mean()
+    
     latest_price = float(close_prices.iloc[-1])
     short_ema = float(close_prices.ewm(span=9, adjust=False).mean().iloc[-1])
     long_ema = float(close_prices.ewm(span=21, adjust=False).mean().iloc[-1])
