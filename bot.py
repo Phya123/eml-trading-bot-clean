@@ -668,10 +668,14 @@ trade_size = 100  # Notional value in dollars
 def force_buy(symbol, amount=None):
     """Force a buy order for a specific symbol."""
     try:
-        # Get market data to access the ATR we calculated in calculate_signal
+        # Get market data
         bars = _get_bars_dataframe(symbol, limit=60)
         current_price = float(bars['close'].iloc[-1])
-        current_atr = float(bars['ATR'].iloc[-1]) # Uses the ATR you just added!
+        
+        # Calculate ATR for volatility-adjusted sizing
+        bars['TR'] = bars[['high', 'low', 'close']].apply(lambda x: max(x['high']-x['low'], abs(x['high']-x['close']), abs(x['low']-x['close'])), axis=1)
+        bars['ATR'] = bars['TR'].rolling(window=14).mean()
+        current_atr = float(bars['ATR'].iloc[-1])
         
         # Calculate quantity dynamically
         qty = risk_engine.calculate_position_size(
@@ -679,7 +683,7 @@ def force_buy(symbol, amount=None):
             atr_value=current_atr
         )
         
-        # Execute the order using the calculated quantity
+        # Execute the order
         order = api.submit_order(
             symbol=symbol,
             qty=qty,
@@ -694,19 +698,6 @@ def force_buy(symbol, amount=None):
     except Exception as e:
         print(f"❌ FORCED BUY FAILED: {symbol} - {e}")
         return False
-            except Exception as e:
-        print(f"❌ FORCED BUY FAILED: {symbol} - {e}")
-        return False
-        )
-        pnl = (current_price - entry_price) * qty
-        print(f"✅ FORCED SELL: {symbol} | Qty: {qty:.4f} | Price: ${current_price:.2f} | PnL: ${pnl:.2f}")
-        log_trade(symbol, "SELL", entry_price, current_price, qty, pnl, "FORCED SELL")
-        return True
-    except Exception as e:
-        print(f"❌ FORCED SELL FAILED: {symbol} - {e}")
-        return False
-
-
 def should_sell_position(symbol, entry_price, current_price):
     """Determine if a position should be sold based on price targets or signal strength."""
     profit_pct = (current_price - entry_price) / entry_price if entry_price > 0 else 0
