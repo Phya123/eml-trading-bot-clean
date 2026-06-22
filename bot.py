@@ -3,7 +3,7 @@ from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
-
+from alpaca.trading.requests import MarketOrderRequest
 # --- CONFIGURATION ---
 MY_SYMBOLS = ["SPCX", "EXL", "QQQ", "SPY"]
 MAX_CAPITAL_USAGE = 0.70
@@ -31,7 +31,7 @@ def force_buy(symbol):
         qty = (available_cash * MAX_CAPITAL_USAGE) / current_price
         
         print(f"SENTINEL: Live Trade - Buying {qty:.4f} shares of {symbol} at ${current_price}")
-       from alpaca.trading.requests import MarketOrderRequest
+       
 from alpaca.trading.enums import OrderSide, TimeInForce
 
 # ... inside your force_buy(symbol) function ...
