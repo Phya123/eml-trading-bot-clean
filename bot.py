@@ -49,7 +49,7 @@ def force_buy(symbol):
             qty=qty,
             side=OrderSide.BUY,
             type='market',
-            time_in_force=TimeInForce.GTC
+            time_in_force=TimeInForce.DAY
         )
         api.submit_order(order_data)
         print(f"✅ Order submitted for {symbol}")
