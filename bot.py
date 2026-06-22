@@ -6,6 +6,7 @@ from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.common.enums import BaseURL
+
 # --- CONFIGURATION ---
 MY_SYMBOLS = ["SPCX", "EXL", "QQQ", "SPY"]
 MAX_CAPITAL_USAGE = 0.70
@@ -18,10 +19,12 @@ api = TradingClient(
     paper=False,
     base_url=BaseURL.LIVE
 )
+# DELETE your old api = ... block and PASTE this exactly:
 api = TradingClient(
     os.environ.get("APCA_API_KEY_ID"), 
     os.environ.get("APCA_API_SECRET_KEY"), 
-    paper=False
+    paper=False, 
+    base_url=BaseURL.PRODUCTION
 )
 
 # --- INITIALIZATION ---
