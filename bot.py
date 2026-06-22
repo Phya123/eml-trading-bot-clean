@@ -34,16 +34,25 @@ def is_market_open():
 
 def force_buy(symbol):
     try:
+        # 1. Fetch data
         request = StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Minute, limit=60)
         bars = data_api.get_stock_bars(request).df
         current_price = float(bars['close'].iloc[-1])
         
+        # 2. Get Account Info
         available_cash = float(api.get_account().cash)
-        qty = (available_cash * MAX_CAPITAL_USAGE) / current_price
         
+        # 3. Calculate and Check
+        investment_amount = available_cash * MAX_CAPITAL_USAGE
+        
+        if investment_amount < 1.05:
+            print(f"Skipping {symbol}: Calculated investment (${investment_amount:.2f}) is below minimum $1.00 requirement.")
+            return
+
+        qty = investment_amount / current_price
         print(f"SENTINEL: Live Trade - Buying {qty:.4f} shares of {symbol} at ${current_price}")
-        
-        # CORRECT ORDER SUBMISSION
+
+        # 4. Submit Order
         order_data = MarketOrderRequest(
             symbol=symbol,
             qty=qty,
@@ -53,21 +62,6 @@ def force_buy(symbol):
         )
         api.submit_order(order_data)
         print(f"✅ Order submitted for {symbol}")
-        
+
     except Exception as e:
         print(f"❌ Failed: {symbol} - {e}")
-
-# --- MAIN LOOP ---
-while True:
-    if is_market_open():
-        if daily_stats["total_profit"] >= DAILY_PROFIT_TARGET:
-            print("Daily profit target reached. Sleeping.")
-        else:
-            for symbol in MY_SYMBOLS:
-                if symbol == "SPCX":
-                    print("Skipping SPCX (Validation pending)")
-                    continue
-                force_buy(symbol)
-    else:
-        print("Market is closed. Sentinel is in standby mode.")
-    time.sleep(60)
