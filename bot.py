@@ -50,3 +50,4 @@ while True:
         print("Market closed. Sentinel standby.")
     
     time.sleep(60)
+        
