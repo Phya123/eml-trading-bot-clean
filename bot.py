@@ -24,24 +24,6 @@ def _get_bars_dataframe(symbol, limit):
     return bars.df
 
 # --- TRADING LOGIC ---
-def force_buy(symbol, amount=None):
-    try:
-        # Now this call works perfectly
-        bars = _get_bars_dataframe(symbol, limit=60)
-        current_price = float(bars['close'].iloc[-1])
-        
-        order = api.submit_order(symbol=symbol, qty=1, side='buy', type='market', time_in_force='day')
-        print(f"✅ FORCED BUY: {symbol}")
-        return True
-    except Exception as e:
-        print(f"❌ FORCED BUY FAILED: {symbol} - {e}")
-        return False
-        symbol_or_symbols=symbol,
-        timeframe=TimeFrame.Minute,
-        limit=limit
-    )
-    bars = data_api.get_stock_bars(request)
-    return bars.df
 
 def force_buy(symbol, amount=None):
     try:
@@ -668,39 +650,27 @@ def time_until_market_open(now=None):
 
 
 # ==========================================
-# INITIALIZE ON STARTUP
-# ==========================================
-
-initialize_trade_log()
-
-# ==========================================
-# MAIN TRADING LOGIC
-# ==========================================
-
-# Alpaca API setup (replace with your credentials)
-API_KEY = os.getenv('ALPACA_API_KEY', 'your_api_key')
-API_SECRET = os.getenv('ALPACA_API_SECRET', 'your_secret')
-BASE_URL = 'https://paper-api.alpaca.markets'  # Use live URL for live trading
-
-api = tradeapi.REST(API_KEY, API_SECRET, BASE_URL, api_version='v2')
-
-import os
-
-# Force the bot to pull directly from your Railway environment settings
-API_KEY = os.getenv('API_KEY') or os.getenv('ALPACA_API_KEY')
-API_SECRET = os.getenv('API_SECRET') or os.getenv('ALPACA_API_SECRET')
-BASE_URL = os.getenv('BASE_URL') or os.getenv('ALPACA_API_URL') or 'https://paper-api.alpaca.markets'
-
-# Create the client directly using the grabbed variables
-api = tradeapi.REST(API_KEY, API_SECRET, BASE_URL, api_version='v2')
-
-# Bypass the strict string check to ensure it loads
-if not API_KEY or API_KEY in ['your_api_key', 'your_real_key', '']:
-    print("\n❌ ERROR: Missing or placeholder Alpaca API credentials!")
-    raise RuntimeError("Invalid API credentials")
-
-if SPACEX_MODE:
+def force_buy(symbol, amount=None):
     try:
+        # Get market data using the helper
+        bars = _get_bars_dataframe(symbol, limit=60)
+        current_price = float(bars['close'].iloc[-1])
+        
+        # Calculate ATR and trade logic here
+        
+        # Execute the order (Balanced parentheses)
+        order = api.submit_order(
+            symbol=symbol,
+            qty=1,
+            side='buy',
+            type='market',
+            time_in_force='day'
+        )
+        print(f"✅ FORCED BUY: {symbol}")
+        return True
+    except Exception as e:
+        print(f"❌ FORCED BUY FAILED: {symbol} - {e}")
+        return False
         SPACEX_ASSET = api.get_asset(SPACEX_SYMBOL)
         print(f"✅ SpaceX asset found: {SPACEX_ASSET.symbol}")
     except Exception as e:
