@@ -62,7 +62,7 @@ def force_buy(symbol):
         )
         api.submit_order(order_data)
         print(f"✅ Order submitted for {symbol}")
-except Exception as e:
+     except Exception as e:
         import traceback
         print(f"❌ CRITICAL FAILURE: {e}")
         traceback.print_exc()
