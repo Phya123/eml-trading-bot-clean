@@ -6,11 +6,52 @@ from zoneinfo import ZoneInfo
 import alpaca_trade_api as tradeapi
 import numpy as np
 import pandas as pd
+# Initialize clients
+trading_client = TradingClient(os.getenv('APCA_API_KEY_ID'), os.getenv('APCA_API_SECRET_KEY'), paper=True)
+data_client = StockHistoricalDataClient(os.getenv('APCA_API_KEY_ID'), os.getenv('APCA_API_SECRET_KEY'))
+
+# Create aliases
+api = trading_client
+data_api = data_client
 class RiskManager:
     def __init__(self, account_equity=400.0, risk_per_trade=0.01):
         self.equity = account_equity
         self.risk_per_trade = risk_per_trade
+def _get_bars_dataframe(symbol, limit):
+    global data_api
+    from alpaca.data.requests import StockBarsRequest
+    from alpaca.data.timeframe import TimeFrame
+    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+    request = StockBarsRequest(
+        symbol_or_symbols=symbol,
+        timeframe=TimeFrame.Minute,
+        limit=limit
+    )
+    bars = data_api.get_stock_bars(request)
+    return bars.df
 
+def force_buy(symbol, amount=None):
+    try:
+        # Get market data using our helper
+        bars = _get_bars_dataframe(symbol, limit=60)
+        current_price = float(bars['close'].iloc[-1])
+        
+        # Calculate ATR and trade logic...
+        # (Keep your existing ATR and quantity calculation here)
+        
+        # Execute the order using the trading_client (aliased as 'api')
+        order = api.submit_order(
+            symbol=symbol,
+            qty=qty,
+            side='buy',
+            type='market',
+            time_in_force='day'
+        )
+        print(f"✅ FORCED BUY: {symbol}")
+        return True
+    except Exception as e:
+        print(f"❌ FORCED BUY FAILED: {symbol} - {e}")
+        return False
     def calculate_position_size(self, current_price, atr_value, atr_multiplier=2.0):
         # Dollar amount to risk: 1% of your $400 = $4.00
         risk_amount = self.equity * self.risk_per_trade
@@ -599,7 +640,7 @@ def time_until_market_open(now=None):
     # Check if today is a trading day
     if is_trading_day(now):
         # Market opens at 9:30 AM ET
-        market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+        
         if now < market_open:
             return (market_open - now).total_seconds() / 60
     
@@ -654,18 +695,34 @@ if SPACEX_MODE:
 
 if SPACEX_MODE:
     try:
+        from alpaca.data.requests import StockLatestTradeRequest
+        # Use data_api to get the trade
+        request = StockLatestTradeRequest(symbol_or_symbols=SPACEX_SYMBOL)
+        trade = data_api.get_stock_latest_trade(request)
+        spacex_price = float(trade[SPACEX_SYMBOL].price)
+        
+        # Use trading_client (aliased as 'api') for the account info
         account = api.get_account()
         equity = float(account.equity)
         buying_power = float(account.buying_power)
+        
+        handle_spacex(spacex_price, equity, buying_power)
+    except Exception as e:
+        print(f"SPACEX mode skipped: {e}")
+    try:
+        account = api.get_account()
+        equity = float(account.equity)
+        # Fixed line
+
         spacex_price = float(api.get_latest_trade(SPACEX_SYMBOL).price)
         handle_spacex(spacex_price, equity, buying_power)
     except Exception as e:
         print(f"SPACEX mode skipped: {e}")
-
+def _get_bars_dataframe(symbol, limit)
 # Example symbols and trade size (customize as needed)
 symbols = ['SPY', 'QQQ', 'XLE']
 trade_size = 100  # Notional value in dollars
-def force_buy(symbol, amount=None):
+
     """Force a buy order for a specific symbol."""
     try:
         # Get market data
