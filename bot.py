@@ -11,6 +11,12 @@ MY_SYMBOLS = ["SPCX", "EXL", "QQQ", "SPY"]
 MAX_CAPITAL_USAGE = 0.70
 DAILY_PROFIT_TARGET = 3.00
 daily_stats = {"total_profit": 0.0}
+# ERASE your old line 14 and ADD this:
+api = TradingClient(
+    os.environ.get("APCA_API_KEY_ID"), 
+    os.environ.get("APCA_API_SECRET_KEY"), 
+    paper=False
+)
 
 # --- INITIALIZATION ---
 api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"), paper=True)
