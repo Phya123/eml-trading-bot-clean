@@ -22,7 +22,7 @@ api = TradingClient(
     os.environ.get("APCA_API_SECRET_KEY"), 
     paper=False
 )
-)
+
 
 # --- INITIALIZATION ---
 data_api = StockHistoricalDataClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"))
