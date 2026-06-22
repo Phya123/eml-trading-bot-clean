@@ -6,7 +6,8 @@ from alpaca.data.requests import StockBarsRequest, StockLatestTradeRequest
 from alpaca.data.timeframe import TimeFrame
 
         
-
+# Define your 4 specific tickers
+my_symbols = ["SPCX", "EXL", "QQQ", "SPY"]
   # --- HELPER FUNCTIONS ---
 def _get_bars_dataframe(symbol, limit):
     global data_api
@@ -42,23 +43,15 @@ print("DEBUG: Script reached the end of the file", flush=True)
 print("DEBUG: Inside main trading loop", flush=True)
 # ... (all your existing imports, helper functions, and force_buy logic) ...
 
-# --- MAIN LOOP ---
+
 while True:
     print(f"DEBUG: Still running. Current loop status: OK", flush=True)
     
-    # Place your existing trading strategy calls here
-    # Example:
-    # manage_positions()
-    # check_signals()
-    
-    time.sleep(60) # This pauses the bot for 60 seconds to prevent API rate limiting
-# --- MAIN LOOP ---
-while True:
-    print(f"DEBUG: Still running. Current loop status: OK", flush=True)
-    
-    # ADD YOUR TEST LINE HERE:
-    print(f"TEST: Checking symbol: AAPL - Calculated Score: 0.85", flush=True)
-    
-    # Your strategy logic follows...
-    # manage_positions()
-    # time.sleep(60)
+    # This loop goes through your 4 symbols one by one
+    for symbol in my_symbols:
+        # This is where your actual strategy logic goes
+        print(f"TEST: Checking symbol: {symbol}", flush=True)
+        # force_buy(symbol) 
+        
+    # Sleep to prevent rate-limiting (must be OUTSIDE the 'for' loop)
+    time.sleep(60)
