@@ -40,3 +40,15 @@ def force_buy(symbol, amount=None):
 print("DEBUG: Script reached the end of the file", flush=True)
 # If you have a loop, put the next line right INSIDE the loop:
 print("DEBUG: Inside main trading loop", flush=True)
+# ... (all your existing imports, helper functions, and force_buy logic) ...
+
+# --- MAIN LOOP ---
+while True:
+    print(f"DEBUG: Still running. Current loop status: OK", flush=True)
+    
+    # Place your existing trading strategy calls here
+    # Example:
+    # manage_positions()
+    # check_signals()
+    
+    time.sleep(60) # This pauses the bot for 60 seconds to prevent API rate limiting
