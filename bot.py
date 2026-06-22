@@ -31,7 +31,9 @@ def force_buy(symbol):
         qty = (available_cash * MAX_CAPITAL_USAGE) / current_price
         
         print(f"SENTINEL: Live Trade - Buying {qty:.4f} shares of {symbol} at ${current_price}")
-        # api.submit_order(symbol=symbol, qty=qty, side='buy', type='market', time_in_force='gtc')
+        print(f"SENTINEL: Live Trade - Buying {qty:.4f} shares of {symbol} at ${current_price}")
+        # LINE 34 IS NOW ACTIVE:
+        api.submit_order(symbol=symbol, qty=qty, side='buy', type='market', time_in_force='gtc')
     except Exception as e:
         print(f"❌ Failed: {symbol} - {e}")
 
