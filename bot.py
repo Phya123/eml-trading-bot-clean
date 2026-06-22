@@ -1,61 +1,50 @@
-import os, time, datetime
+import os, time
 from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
-from alpaca.common.enums import BaseURL
 
-# --- CONFIGURATION ---
-MY_SYMBOLS = ["SPCX", "EXL", "QQQ", "SPY"]
-MAX_CAPITAL_USAGE = 0.70
-DAILY_PROFIT_TARGET = 3.00
-daily_stats = {"total_profit": 0.0}
+# --- CONFIGURATION (RISK MANAGEMENT) ---
+MY_SYMBOLS = ["QQQ", "SPY"] # Added only stable symbols
+MAX_CAPITAL_USAGE = 0.50     # Use 50% of available cash per symbol
+MIN_ORDER_VALUE = 1.10       # Ensure order is above $1.00 min
 
 # --- INITIALIZATION ---
-api = TradingClient(
-    os.environ.get("APCA_API_KEY_ID"),
-    os.environ.get("APCA_API_SECRET_KEY"),
-    paper=False
-)
+api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"), paper=False)
 data_api = StockHistoricalDataClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"))
-
-# --- HELPER FUNCTIONS ---
-def is_market_open():
-    clock = api.get_clock()
-    return clock.is_open
 
 def force_buy(symbol):
     try:
-        # 1. Fetch data
-        request = StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Minute, limit=60)
-        bars = data_api.get_stock_bars(request).df
-        current_price = float(bars['close'].iloc[-1])
+        # 1. Fetch current price
+        request = StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Minute, limit=1)
+        price = float(data_api.get_stock_bars(request).df['close'].iloc[-1])
         
-        # 2. Get Account Info
+        # 2. Get Cash and Calculate Position
         available_cash = float(api.get_account().cash)
+        investment = available_cash * MAX_CAPITAL_USAGE
         
-        # 3. Calculate and Check
-        investment_amount = available_cash * MAX_CAPITAL_USAGE
-        
-        if investment_amount < 1.05:
-            print(f"Skipping {symbol}: Investment (${investment_amount:.2f}) below $1.00 min.")
-            return
-
-        qty = investment_amount / current_price
-        print(f"SENTINEL: Buying {qty:.4f} shares of {symbol} at ${current_price}")
+        # 3. Risk Management: Sanity Check
+        if investment < MIN_ORDER_VALUE:
+            return # Skip if below minimum requirements
 
         # 4. Submit Order
-        order_data = MarketOrderRequest(
-            symbol=symbol,
-            qty=qty,
-            side=OrderSide.BUY,
-            type='market',
-            time_in_force=TimeInForce.DAY
-        )
-        api.submit_order(order_data)
-        print(f"✅ Order submitted for {symbol}")
-
+        qty = round(investment / price, 4)
+        order = MarketOrderRequest(symbol=symbol, qty=qty, side=OrderSide.BUY, type='market', time_in_force=TimeInForce.DAY)
+        api.submit_order(order)
+        print(f"✅ Executed Buy: {qty} shares of {symbol} at ${price}")
+        
     except Exception as e:
-        print(f"❌ CRITICAL FAILURE: {e}")
+        print(f"❌ Failed to trade {symbol}: {e}")
+
+# --- INFINITE MAIN LOOP ---
+print("🚀 Sentinel Bot Active. Monitoring Market...")
+while True:
+    if api.get_clock().is_open:
+        for symbol in MY_SYMBOLS:
+            force_buy(symbol)
+            time.sleep(30) # Wait 30 seconds between orders to respect API limits
+    else:
+        print("Market closed. Sentinel in standby.")
+        time.sleep(300) # Wait 5 minutes before re-checking
