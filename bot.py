@@ -37,3 +37,6 @@ def force_buy(symbol, amount=None):
     except Exception as e:
         print(f"❌ FORCED BUY FAILED: {symbol} - {e}")
         return False                      
+print("DEBUG: Script reached the end of the file", flush=True)
+# If you have a loop, put the next line right INSIDE the loop:
+print("DEBUG: Inside main trading loop", flush=True)
