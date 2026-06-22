@@ -52,3 +52,13 @@ while True:
     # check_signals()
     
     time.sleep(60) # This pauses the bot for 60 seconds to prevent API rate limiting
+# --- MAIN LOOP ---
+while True:
+    print(f"DEBUG: Still running. Current loop status: OK", flush=True)
+    
+    # ADD YOUR TEST LINE HERE:
+    print(f"TEST: Checking symbol: AAPL - Calculated Score: 0.85", flush=True)
+    
+    # Your strategy logic follows...
+    # manage_positions()
+    # time.sleep(60)
