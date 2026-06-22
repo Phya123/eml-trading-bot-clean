@@ -1,11 +1,10 @@
-import csv
-import os
-import time
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-import alpaca_trade_api as tradeapi
-import numpy as np
-import pandas as pd
+# --- IMPORTS AND INITIALIZATION ---
+import csv, os, time
+from alpaca.trading.client import TradingClient
+from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest, StockLatestTradeRequest
+from alpaca.data.timeframe import TimeFrame
+
 # Initialize clients
 trading_client = TradingClient(os.getenv('APCA_API_KEY_ID'), os.getenv('APCA_API_SECRET_KEY'), paper=True)
 data_client = StockHistoricalDataClient(os.getenv('APCA_API_KEY_ID'), os.getenv('APCA_API_SECRET_KEY'))
@@ -13,16 +12,30 @@ data_client = StockHistoricalDataClient(os.getenv('APCA_API_KEY_ID'), os.getenv(
 # Create aliases
 api = trading_client
 data_api = data_client
-class RiskManager:
-    def __init__(self, account_equity=400.0, risk_per_trade=0.01):
-        self.equity = account_equity
-        self.risk_per_trade = risk_per_trade
+
+# --- HELPER FUNCTIONS (At top level, not inside others!) ---
 def _get_bars_dataframe(symbol, limit):
-    global data_api
-    from alpaca.data.requests import StockBarsRequest
-    from alpaca.data.timeframe import TimeFrame
-    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
     request = StockBarsRequest(
+        symbol_or_symbols=symbol,
+        timeframe=TimeFrame.Minute,
+        limit=limit
+    )
+    bars = data_api.get_stock_bars(request)
+    return bars.df
+
+# --- TRADING LOGIC ---
+def force_buy(symbol, amount=None):
+    try:
+        # Now this call works perfectly
+        bars = _get_bars_dataframe(symbol, limit=60)
+        current_price = float(bars['close'].iloc[-1])
+        
+        order = api.submit_order(symbol=symbol, qty=1, side='buy', type='market', time_in_force='day')
+        print(f"✅ FORCED BUY: {symbol}")
+        return True
+    except Exception as e:
+        print(f"❌ FORCED BUY FAILED: {symbol} - {e}")
+        return False
         symbol_or_symbols=symbol,
         timeframe=TimeFrame.Minute,
         limit=limit
