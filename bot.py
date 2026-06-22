@@ -13,7 +13,7 @@ MAX_CAPITAL_USAGE = 0.70
 DAILY_PROFIT_TARGET = 3.00
 daily_stats = {"total_profit": 0.0}
 # Replace your old API initialization with this:
-api = TradingClient(
+
     
 # DELETE your old api = ... block and PASTE this exactly:
 api = TradingClient(
