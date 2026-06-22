@@ -1,4 +1,4 @@
-import csv, os, time, datetime
+import os, time, datetime
 from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
@@ -18,39 +18,20 @@ data_api = StockHistoricalDataClient(os.environ.get("APCA_API_KEY_ID"), os.envir
 def is_market_open():
     now = datetime.datetime.now().time()
     return datetime.time(9, 30) <= now <= datetime.time(16, 0)
-def monitor_positions():
-    try:
-        positions = api.list_positions()
-        for pos in positions:
-            symbol = pos.symbol
-            # Calculate current price vs buy price
-            current_price = float(pos.current_price)
-            avg_entry = float(pos.avg_entry_price)
-            change_percent = (current_price - avg_entry) / avg_entry
-            
-            # EXIT LOGIC
-            if change_percent >= TAKE_PROFIT or change_percent <= STOP_LOSS:
-                print(f"SENTINEL: Closing position in {symbol}. Change: {change_percent:.2%}")
-                api.close_position(symbol)
-                # Update stats (basic tracker)
-                daily_stats["total_profit"] += (float(pos.market_value) - float(pos.cost_basis))
-    except Exception as e:
-        print(f"❌ Monitoring failed: {e}")
-def _get_bars_dataframe(symbol, limit):
-    return data_api.get_stock_bars(StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Minute, limit=limit)).df
 
 def force_buy(symbol):
     try:
-        bars = _get_bars_dataframe(symbol, limit=60)
+        # Data fetch logic
+        request = StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Minute, limit=60)
+        bars = data_api.get_stock_bars(request).df
         current_price = float(bars['close'].iloc[-1])
+        
+        # Position sizing logic
         available_cash = float(api.get_account().cash)
         qty = (available_cash * MAX_CAPITAL_USAGE) / current_price
         
-        print(f"SENTINEL: Executing Live Trade - Buying {qty:.4f} shares of {symbol} at ${current_price}")
-        
-        # LIVE TRADE EXECUTED HERE
-        api.submit_order(symbol=symbol, qty=qty, side='buy', type='market', time_in_force='gtc')
-        
+        print(f"SENTINEL: Live Trade - Buying {qty:.4f} shares of {symbol} at ${current_price}")
+        # api.submit_order(symbol=symbol, qty=qty, side='buy', type='market', time_in_force='gtc')
     except Exception as e:
         print(f"❌ Failed: {symbol} - {e}")
 
@@ -65,15 +46,7 @@ while True:
                     print("Skipping SPCX (Validation pending)")
                     continue
                 force_buy(symbol)
-    # --- MAIN LOOP ---
-while True:
-    if is_market_open():
-        monitor_positions()  # <--- ADD THIS LINE
-        
-        if daily_stats["total_profit"] >= DAILY_PROFIT_TARGET:
-            print("Daily profit target reached. Sleeping.")
-        else:
-            for symbol in MY_SYMBOLS:
-                # ... rest of your code ...
+    else:
         print("Market closed. Sentinel standby.")
+    
     time.sleep(60)
