@@ -4,17 +4,15 @@ from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 
+# --- CONFIGURATION ---
+MY_SYMBOLS = ["SPCX", "EXL", "QQQ", "SPY"]
+MAX_CAPITAL_USAGE = 0.70
+DAILY_PROFIT_TARGET = 3.00
+daily_stats = {"total_profit": 0.0}
+
 # --- INITIALIZATION ---
-api_key = os.environ.get("APCA_API_KEY_ID")
-secret_key = os.environ.get("APCA_API_SECRET_KEY")
-
-if not api_key or not secret_key:
-    raise ValueError("API Keys are missing!")
-
-data_api = StockHistoricalDataClient(api_key=api_key, secret_key=secret_key)
-api = TradingClient(api_key=api_key, secret_key=secret_key, paper=False)
-
-my_symbols = ["SPCX", "EXL", "QQQ", "SPY"]
+api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"), paper=False)
+data_api = StockHistoricalDataClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"))
 
 # --- HELPER FUNCTIONS ---
 def is_market_open():
@@ -22,27 +20,30 @@ def is_market_open():
     return datetime.time(9, 30) <= now <= datetime.time(16, 0)
 
 def _get_bars_dataframe(symbol, limit):
-    request = StockBarsRequest(
-        symbol_or_symbols=symbol,
-        timeframe=TimeFrame.Minute,
-        limit=limit
-    )
-    return data_api.get_stock_bars(request).df
+    return data_api.get_stock_bars(StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Minute, limit=limit)).df
 
 def force_buy(symbol):
     try:
         bars = _get_bars_dataframe(symbol, limit=60)
-        # Your trading logic here
-        print(f"✅ Checking {symbol}")
+        current_price = float(bars['close'].iloc[-1])
+        available_cash = float(api.get_account().cash)
+        qty = (available_cash * MAX_CAPITAL_USAGE) / current_price
+        print(f"SENTINEL: Buying {qty:.4f} shares of {symbol} at ${current_price}")
+        # api.submit_order(symbol=symbol, qty=qty, side='buy', type='market', time_in_force='gtc')
     except Exception as e:
         print(f"❌ Failed: {symbol} - {e}")
 
 # --- MAIN LOOP ---
 while True:
     if is_market_open():
-        for symbol in my_symbols:
-            force_buy(symbol)
+        if daily_stats["total_profit"] >= DAILY_PROFIT_TARGET:
+            print("Daily profit target reached. Sleeping.")
+        else:
+            for symbol in MY_SYMBOLS:
+                if symbol == "SPCX":
+                    print("Skipping SPCX (Validation pending)")
+                    continue
+                force_buy(symbol)
     else:
         print("Market closed. Sentinel standby.")
-    
     time.sleep(60)
