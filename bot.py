@@ -4,6 +4,8 @@ from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.enums import OrderSide, TimeInForce
+
 # --- CONFIGURATION ---
 MY_SYMBOLS = ["SPCX", "EXL", "QQQ", "SPY"]
 MAX_CAPITAL_USAGE = 0.70
@@ -11,44 +13,36 @@ DAILY_PROFIT_TARGET = 3.00
 daily_stats = {"total_profit": 0.0}
 
 # --- INITIALIZATION ---
-api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"), paper=False)
+api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"), paper=True)
 data_api = StockHistoricalDataClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"))
 
 # --- HELPER FUNCTIONS ---
 def is_market_open():
-    now = datetime.datetime.now().time()
-    return datetime.time(9, 30) <= now <= datetime.time(16, 0)
+    clock = api.get_clock()
+    return clock.is_open
 
 def force_buy(symbol):
     try:
-        # Data fetch logic
         request = StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Minute, limit=60)
         bars = data_api.get_stock_bars(request).df
         current_price = float(bars['close'].iloc[-1])
         
-        # Position sizing logic
         available_cash = float(api.get_account().cash)
         qty = (available_cash * MAX_CAPITAL_USAGE) / current_price
         
         print(f"SENTINEL: Live Trade - Buying {qty:.4f} shares of {symbol} at ${current_price}")
-       
-from alpaca.trading.enums import OrderSide, TimeInForce
-
-# ... inside your force_buy(symbol) function ...
-
-# Create the request object properly
-order_data = MarketOrderRequest(
-    symbol=symbol,
-    qty=qty,
-    side=OrderSide.BUY,
-    type='market',
-    time_in_force=TimeInForce.GTC
-)
-
-# Submit the order using the request object
-api.submit_order(order_data)
-        # LINE 34 IS NOW ACTIVE:
-        api.submit_order(symbol=symbol, qty=qty, side='buy', type='market', time_in_force='gtc')
+        
+        # CORRECT ORDER SUBMISSION
+        order_data = MarketOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.BUY,
+            type='market',
+            time_in_force=TimeInForce.GTC
+        )
+        api.submit_order(order_data)
+        print(f"✅ Order submitted for {symbol}")
+        
     except Exception as e:
         print(f"❌ Failed: {symbol} - {e}")
 
@@ -64,7 +58,5 @@ while True:
                     continue
                 force_buy(symbol)
     else:
-        print("Market closed. Sentinel standby.")
-    
+        print("Market is closed. Sentinel is in standby mode.")
     time.sleep(60)
-        
