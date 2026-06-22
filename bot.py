@@ -5,13 +5,19 @@ from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
-
+from alpaca.common.enums import BaseURL
 # --- CONFIGURATION ---
 MY_SYMBOLS = ["SPCX", "EXL", "QQQ", "SPY"]
 MAX_CAPITAL_USAGE = 0.70
 DAILY_PROFIT_TARGET = 3.00
 daily_stats = {"total_profit": 0.0}
-# ERASE your old line 14 and ADD this:
+# Replace your old API initialization with this:
+api = TradingClient(
+    os.environ.get("APCA_API_KEY_ID"), 
+    os.environ.get("APCA_API_SECRET_KEY"), 
+    paper=False,
+    base_url=BaseURL.LIVE
+)
 api = TradingClient(
     os.environ.get("APCA_API_KEY_ID"), 
     os.environ.get("APCA_API_SECRET_KEY"), 
@@ -19,7 +25,6 @@ api = TradingClient(
 )
 
 # --- INITIALIZATION ---
-api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"), paper=True)
 data_api = StockHistoricalDataClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"))
 
 # --- HELPER FUNCTIONS ---
