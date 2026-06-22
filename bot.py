@@ -15,7 +15,7 @@ if not api_key or not secret_key:
 
 data_api = StockHistoricalDataClient(api_key=api_key, secret_key=secret_key)
 api = TradingClient(api_key=api_key, secret_key=secret_key, paper=False)
-                                     secret_key=os.environ.get("APCA_API_SECRET_KEY"))
+secret_key=os.environ.get("APCA_API_SECRET_KEY"))
 api = TradingClient(api_key=os.environ.get("APCA_API_KEY_ID"), 
                     secret_key=os.environ.get("APCA_API_SECRET_KEY"), 
                     paper=False) # Ensure paper=False for LIVE trading
