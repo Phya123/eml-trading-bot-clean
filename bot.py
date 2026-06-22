@@ -7,18 +7,16 @@ from alpaca.data.historical import StockHistoricalDataClient
 # Initialize the Data and Trading Clients
 # --- INITIALIZATION ---
 # Update this section to ensure it loads correctly
+# --- INITIALIZATION ---
 api_key = os.environ.get("APCA_API_KEY_ID")
 secret_key = os.environ.get("APCA_API_SECRET_KEY")
 
 if not api_key or not secret_key:
-    raise ValueError("API Keys are missing! Check your Railway Environment Variables.")
+    raise ValueError("API Keys are missing! Check Railway variables.")
 
+# Initialize global clients
 data_api = StockHistoricalDataClient(api_key=api_key, secret_key=secret_key)
 api = TradingClient(api_key=api_key, secret_key=secret_key, paper=False)
-secret_key=os.environ.get("APCA_API_SECRET_KEY"))
-api = TradingClient(api_key=os.environ.get("APCA_API_KEY_ID"), 
-                    secret_key=os.environ.get("APCA_API_SECRET_KEY"), 
-                    paper=False) # Ensure paper=False for LIVE trading
 # --- EML SENTINEL CONFIGURATION ---
 MIN_SIGNAL_SCORE = 0.40
 MAX_CAPITAL_USAGE = 0.70
