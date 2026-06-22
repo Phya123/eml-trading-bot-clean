@@ -20,7 +20,21 @@ def force_buy(symbol):
         # 1. Fetch current price
         request = StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Minute, limit=1)
         price = float(data_api.get_stock_bars(request).df['close'].iloc[-1])
+        def force_buy(symbol):
+    try:
+        # AFTER: price = float(...)
+        print(f"DEBUG: {symbol} current price is ${price}") 
         
+        # AFTER: investment = available_cash * MAX_CAPITAL_USAGE
+        print(f"DEBUG: Considering {symbol}. Cash available: ${available_cash:.2f}. Target investment: ${investment:.2f}")
+
+        # AFTER: if investment < MIN_ORDER_VALUE:
+        # Change this specific line to:
+        if investment < MIN_ORDER_VALUE:
+            print(f"DEBUG: Skipping {symbol}. Investment too low.")
+            return
+            
+        # ... rest of your code
         # 2. Get Cash and Calculate Position
         available_cash = float(api.get_account().cash)
         investment = available_cash * MAX_CAPITAL_USAGE
