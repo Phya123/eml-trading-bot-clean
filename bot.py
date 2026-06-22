@@ -4,7 +4,7 @@ from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.requests import MarketOrderRequest
-from alpaca.trading.enums import OrderSide, TimeForce
+from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.common.enums import BaseURL
 
 # --- CONFIGURATION ---
@@ -52,7 +52,7 @@ def force_buy(symbol):
             qty=qty,
             side=OrderSide.BUY,
             type='market',
-            time_in_force=TimeForce.DAY
+            time_in_force=TimeInForce.DAY
         )
         api.submit_order(order_data)
         print(f"✅ Order submitted for {symbol}")
