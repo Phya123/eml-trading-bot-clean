@@ -5,7 +5,16 @@ from alpaca.data.historical import StockHistoricalDataClient
 # ... (your existing imports) ...
 # --- INITIALIZATION ---
 # Initialize the Data and Trading Clients
-data_api = StockHistoricalDataClient(api_key=os.environ.get("APCA_API_KEY_ID"), 
+# --- INITIALIZATION ---
+# Update this section to ensure it loads correctly
+api_key = os.environ.get("APCA_API_KEY_ID")
+secret_key = os.environ.get("APCA_API_SECRET_KEY")
+
+if not api_key or not secret_key:
+    raise ValueError("API Keys are missing! Check your Railway Environment Variables.")
+
+data_api = StockHistoricalDataClient(api_key=api_key, secret_key=secret_key)
+api = TradingClient(api_key=api_key, secret_key=secret_key, paper=False)
                                      secret_key=os.environ.get("APCA_API_SECRET_KEY"))
 api = TradingClient(api_key=os.environ.get("APCA_API_KEY_ID"), 
                     secret_key=os.environ.get("APCA_API_SECRET_KEY"), 
