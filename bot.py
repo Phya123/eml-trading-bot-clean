@@ -14,11 +14,7 @@ DAILY_PROFIT_TARGET = 3.00
 daily_stats = {"total_profit": 0.0}
 # Replace your old API initialization with this:
 api = TradingClient(
-    os.environ.get("APCA_API_KEY_ID"), 
-    os.environ.get("APCA_API_SECRET_KEY"), 
-    paper=False,
-    base_url=BaseURL.LIVE
-)
+    
 # DELETE your old api = ... block and PASTE this exactly:
 api = TradingClient(
     os.environ.get("APCA_API_KEY_ID"), 
