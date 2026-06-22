@@ -31,7 +31,22 @@ def force_buy(symbol):
         qty = (available_cash * MAX_CAPITAL_USAGE) / current_price
         
         print(f"SENTINEL: Live Trade - Buying {qty:.4f} shares of {symbol} at ${current_price}")
-        print(f"SENTINEL: Live Trade - Buying {qty:.4f} shares of {symbol} at ${current_price}")
+       from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.enums import OrderSide, TimeInForce
+
+# ... inside your force_buy(symbol) function ...
+
+# Create the request object properly
+order_data = MarketOrderRequest(
+    symbol=symbol,
+    qty=qty,
+    side=OrderSide.BUY,
+    type='market',
+    time_in_force=TimeInForce.GTC
+)
+
+# Submit the order using the request object
+api.submit_order(order_data)
         # LINE 34 IS NOW ACTIVE:
         api.submit_order(symbol=symbol, qty=qty, side='buy', type='market', time_in_force='gtc')
     except Exception as e:
