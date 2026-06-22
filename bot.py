@@ -6,9 +6,8 @@ from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 
-
 # --- CONFIGURATION ---
-MY_SYMBOLS = ["SPCX", "EXL", "QQQ", "SPY"] # Valid tradeable tickers
+MY_SYMBOLS = ["XLE", "SPCX", "QQQ", "SPY"] # Fixed: XLE instead of EXL
 MAX_CAPITAL_USAGE = 0.50
 MIN_ORDER_VALUE = 1.10
 
@@ -17,19 +16,28 @@ api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_
 data_api = StockHistoricalDataClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"))
 
 def force_buy(symbol):
+    print(f"🔍 Checking {symbol}...") # Added for visibility
     try:
         request = StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Minute, limit=1)
-        price = float(data_api.get_stock_bars(request).df['close'].iloc[-1])
+        bars_df = data_api.get_stock_bars(request).df
+        
+        if bars_df.empty:
+            print(f"⚠️ Skipping {symbol}: No market data available.")
+            return
+            
+        current_price = float(bars_df['close'].iloc[-1])
         available_cash = float(api.get_account().cash)
         investment = available_cash * MAX_CAPITAL_USAGE
         
         if investment < MIN_ORDER_VALUE:
+            print(f"⚠️ Skipping {symbol}: Investment too low (${investment:.2f})")
             return
 
-        qty = round(investment / price, 4)
+        qty = round(investment / current_price, 4)
         order = MarketOrderRequest(symbol=symbol, qty=qty, side=OrderSide.BUY, type='market', time_in_force=TimeInForce.DAY)
         api.submit_order(order)
-        print(f"✅ Executed Buy: {qty} shares of {symbol} at ${price}")
+        print(f"✅ Executed Buy: {qty} shares of {symbol} at ${current_price}")
+        
     except Exception as e:
         print(f"❌ Failed to trade {symbol}: {e}")
 
