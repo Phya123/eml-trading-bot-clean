@@ -73,7 +73,7 @@ def market_trend_ok(symbol):
             
         return True
     except Exception as e:
-        def try_buy(symbol):
+     def try_buy(symbol):
     try:
         # Get your total available buying power
         buying_power = float(api.get_account().buying_power)
@@ -99,19 +99,7 @@ def market_trend_ok(symbol):
                 logger.info(f"Bought ${spend_amount:.2f} of {symbol}")
                 
     except Exception as e:
-        logger.error(f"Buy failed for {symbol}: {e}")
-        
-                )
-                
-                # 2. Submit the request object
-                api.submit_order(order_data=order_data)
-                logger.info(f"Bought {symbol}")
-                
-    except Exception as e:
-        logger.error(f"Buy failed for {symbol}: {e}")
-    except Exception as e:
-        logger.error(f"Buy failed for {symbol}: {e}")
-
+        logger.error(f"Buy failed for {symbol}: {e}")   
 def manage_positions():
     try:
         for p in api.get_all_positions():
