@@ -35,39 +35,50 @@ trading_enabled = True
 def get_market_trend():
     bars = data_api.get_stock_bars(StockBarsRequest(symbol_or_symbols="SPY", timeframe=TimeFrame.Day, limit=MA_PERIOD)).df
     return bars["close"].iloc[-1] > bars["close"].mean() if not bars.empty else False
+# 1. Imports and Setup (Lines 1-31)
+
+# 2. DEFINITIONS (Paste these code blocks individually into their respective spots)
+
 def check_circuit_breaker():
     global trading_enabled
     try:
         acc = api.get_account()
         if state["start_equity"] is None:
             state["start_equity"] = float(acc.equity)
-        
-        equity = float(acc.equity)
-        if equity < float(state["start_equity"]) * (1 - DAILY_LOSS_LIMIT):
+        if float(acc.equity) < float(state["start_equity"]) * (1 - DAILY_LOSS_LIMIT):
             logger.critical("🚨 CIRCUIT BREAKER TRIGGERED")
             trading_enabled = False
     except Exception as e:
-        logger.error(f"Circuit breaker check failed: {e}")
-def run_sentinel():
-    global trading_enabled
-    logger.info("Running sentinel cycle")
-    
-    acc = api.get_account()
-    logger.info(f"Cash: ${acc.cash} | Equity: ${acc.equity}")
-    
-    trend = get_market_trend()
-    logger.info(f"Market trend check: {trend}")
-    
-    positions = api.get_all_positions()
-    logger.info(f"Current positions: {[p.symbol for p in positions]}")
-    
-    if not trend:
-        logger.info("Market trend filter blocked all new buys.")
-        return
+        logger.error(f"Circuit breaker failed: {e}")
 
-    for sym in MY_SYMBOLS:
-        logger.info(f"Checking symbol: {sym}")
-        # Add your buy logic here...
+def market_trend_ok(symbol):
+    try:
+        bars = data_api.get_bars(StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, limit=MA_PERIOD))
+        return bars[-1].close > bars.close.mean()
+    except Exception as e:
+        return False
+
+def try_buy(symbol):
+    try:
+        positions = api.get_all_positions()
+        if not any(p.symbol == symbol for p in positions):
+            if float(api.get_account().buying_power) > MIN_ORDER_VALUE:
+                api.submit_order(symbol=symbol, qty=1, side=OrderSide.BUY, type="market", time_in_force="day")
+                logger.info(f"Bought {symbol}")
+    except Exception as e:
+        logger.error(f"Buy failed for {symbol}: {e}")
+
+def manage_positions():
+    try:
+        for p in api.get_all_positions():
+            if float(p.current_price) >= float(p.avg_entry_price) * (1 + TAKE_PROFIT_PCT):
+                api.close_position(p.symbol)
+                logger.info(f"Take profit hit for {p.symbol}")
+    except Exception as e:
+        logger.error(f"Position management failed: {e}")
+
+# 3. MAIN LOOP (Starts at the bottom)
+
 
 # =========================
 # MAIN LOOP
