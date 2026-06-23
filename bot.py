@@ -31,7 +31,12 @@ logger = logging.getLogger()
 # =========================
 # API INITIALIZATION
 # =========================
-api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"), paper=True)
+# Change this line in your API initialization block:
+api = TradingClient(
+    os.environ.get("APCA_API_KEY_ID"),
+    os.environ.get("APCA_API_SECRET_KEY"),
+    paper=False  # <--- MUST BE FALSE FOR LIVE ACCOUNT
+)
 data_api = StockHistoricalDataClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"))
 
 # =========================
