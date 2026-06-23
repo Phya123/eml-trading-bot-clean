@@ -76,25 +76,17 @@ def market_trend_ok(symbol):
         logger.error(f"Trend check error: {e}")
         return False
 
-def try_buy(symbol):
+def manage_positions():
     try:
-        buying_power = float(api.get_account().buying_power)
-        spend_amount = buying_power * MAX_CAPITAL_USAGE
-        positions = api.get_all_positions()
-        
-        if not any(p.symbol == symbol for p in positions):
-            if buying_power >= spend_amount and spend_amount >= MIN_ORDER_VALUE:
-                order_data = MarketOrderRequest(
-                    symbol=symbol,
-                    notional=spend_amount,
-                    side=OrderSide.BUY,
-                    time_in_force=TimeInForce.DAY
-                )
-                api.submit_order(order_data=order_data)
-                logger.info(f"Bought ${spend_amount:.2f} of {symbol}")
-                
+        for p in api.get_all_positions():
+            # If current price is >= target take profit price
+            if float(p.current_price) >= float(p.avg_entry_price) * (1 + TAKE_PROFIT_PCT):
+                api.close_position(p.symbol)
+                logger.info(f"Take profit hit for {p.symbol}")
     except Exception as e:
-        logger.error(f"Buy failed for {symbol}: {e}")
+        logger.error(f"Position management failed: {e}")
+
+def try_buy(symbol):
     try:
         # Get your total available buying power
         buying_power = float(api.get_account().buying_power)
@@ -111,7 +103,7 @@ def try_buy(symbol):
                 # Use 'notional' to buy a fractional share based on the dollar amount
                 order_data = MarketOrderRequest(
                     symbol=symbol,
-                    notional=spend_amount,
+                    notional=round(spend_amount, 2), # Corrected: Rounding to 2 decimal places
                     side=OrderSide.BUY,
                     time_in_force=TimeInForce.DAY
                 )
@@ -121,32 +113,6 @@ def try_buy(symbol):
                 
     except Exception as e:
         logger.error(f"Buy failed for {symbol}: {e}")
-# =========================
-# MAIN LOOP
-# =========================
-logger.info("🚀 Sentinel v2.1 Online")
-
-while True:
-        if api.get_clock().is_open and trading_enabled:
-            try:
-                # 1. Log Account Status
-                acc = api.get_account()
-                logger.info(f"Account Balance: ${acc.cash} | Equity: ${acc.equity}")
-                
-                # 2. Global Checks
-                check_circuit_breaker()
-                
-                # 3. Check each symbol independently
-                for sym in MY_SYMBOLS:
-                    if market_trend_ok(sym):
-                        try_buy(sym)
-                    else:
-                        logger.info(f"Skipping {sym}: Market trend filter not met.")
-                
-                # 4. Manage existing positions
-                manage_positions()
-                
-            except Exception as e:
                 logger.error(f"Loop error: {e}")
         
         time.sleep(60)
