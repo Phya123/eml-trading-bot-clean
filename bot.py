@@ -120,17 +120,15 @@ def try_buy(symbol):
 # MAIN LOOP
 # =========================
 while True:
-        # Add this line to confirm the bot is alive
-        logger.info("Sentinel is heartbeat-active...") 
+        # Check market clock
+        clock = api.get_clock()
         
-        # 1. Run diagnostic scan every 30 minutes
-        if int(time.time()) % 1800 < 60:
-            log_diagnostics()
-        
-        # ... rest of your code ...
-
-        # 2. Main trading logic
-        if api.get_clock().is_open and trading_enabled:
+        if clock.is_open and trading_enabled:
+            # Run diagnostics every 30 minutes
+            if int(time.time()) % 1800 < 60:
+                log_diagnostics()
+            
+            # Trading logic
             try:
                 manage_positions()
                 if market_trend_ok():
@@ -138,6 +136,10 @@ while True:
                         try_buy(sym)
             except Exception as e:
                 logger.error(f"Loop error: {e}")
-        
-        # 3. Sleep to prevent CPU overload
-        time.sleep(60)
+        else:
+            # Clear logging to prevent spamming
+            if int(time.time()) % 300 < 5: 
+                logger.info(f"Market Closed. Trading Enabled: {trading_enabled}")
+
+        # Reduce sleep from 60 to 1 for faster execution
+        time.sleep(1)
