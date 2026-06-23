@@ -118,9 +118,14 @@ def try_buy(symbol):
 # MAIN LOOP
 # =========================
 while True:
+        # Add this line to confirm the bot is alive
+        logger.info("Sentinel is heartbeat-active...") 
+        
         # 1. Run diagnostic scan every 30 minutes
         if int(time.time()) % 1800 < 60:
             log_diagnostics()
+        
+        # ... rest of your code ...
 
         # 2. Main trading logic
         if api.get_clock().is_open and trading_enabled:
