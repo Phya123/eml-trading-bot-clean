@@ -1,127 +1,65 @@
-import os, time, logging, json, sys
+import os, time, logging, json
+import pandas as pd
+
 from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarRequest
+from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.requests import LimitOrderRequest
-from alpaca.trading.enums import OrderSide, TimeForce
+from alpaca.trading.enums import OrderSide, TimeInForce
 
-# Configure logging to stdout
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout)
+# =========================
+# CONFIG & LOGGING
+# =========================
+MY_SYMBOLS = ["XLE", "SPCX", "QQQ", "SPY"]
+# ... (Keep all your existing constants: MAX_CAPITAL_USAGE, etc.) ...
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger()
-STATE_FILE = "sentinel_state.json"
 
-api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"), paper=False)
-data_api = StockHistoricalDataClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"))
-
-def load_state():
-    if os.path.exists(STATE_FILE):
-        with open(STATE_FILE, "r") as f: return json.load(f)
-    return {"start_equity": None, "last_trade_time": {}, "highs": {}}
-
-state = load_state()
-trading_enabled = True
-
-def save_state():
-    with open(STATE_FILE, "w") as f: json.dump(state, f)
-
-def initialize_state_from_positions():
-    """Ensure we track highs of existing positions after a restart."""
-    for p in api.get_all_positions():
-        if p.symbol not in state["highs"]:
-            state["highs"][p.symbol] = float(p.current_price)
-    save_state()
-
-initialize_state_from_positions()
+# ... (Keep your API and STATE functions as they are) ...
 
 # =========================
-# CORE LOGIC
+# NEW DIAGNOSTIC FUNCTION
 # =========================
-def market_trend_ok():
-    try:
-        bars = data_api.get_stock_bars(StockBarsRequest(symbol_or_symbols="SPY", timeframe=TimeFrame.Day, limit=MA_PERIOD)).df
-        return bars["close"].iloc[-1] > bars["close"].mean()
-    except: return False
-
-def manage_positions():
-    for p in api.get_all_positions():
-        sym, entry, price = p.symbol, float(p.avg_entry_price), float(p.current_price)
-        state["highs"][sym] = max(state["highs"].get(sym, price), price)
-        
-        # Determine exit reason
-        exit_reason = None
-        if price <= entry * (1 - STOP_LOSS_PCT):
-            exit_reason = "Stop Loss"
-        elif price >= entry * (1 + TAKE_PROFIT_PCT):
-            exit_reason = "Take Profit"
-        elif price <= state["highs"][sym] * (1 - TRAILING_STOP_PCT):
-            exit_reason = "Trailing Stop"
-
-        # Execute exit if any reason was met
-        if exit_reason:
-            logger.info(f"📢 EXITING {sym} @ {price} | Reason: {exit_reason}")
-            api.close_position(sym)
-    save_state()
 def log_diagnostics():
-    """Prints a professional diagnostic snapshot of the market."""
     logger.info("--- DIAGNOSTIC SIGNAL SCAN START ---")
-    for symbol in MY_SYMBOLS:
-        try:
-            bars = data_api.get_stock_bars(StockBarRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, limit=200))
-            current_price = float(bars['close'].iloc[-1])
-            trend_avg = float(bars['close'].mean())
-            logger.info(f"{symbol} Price: {current_price:.2f} | Trend Avg (200): {trend_avg:.2f}")
-            if current_price > trend_avg:
-                logger.info(f"{symbol} Decision: BULLISH")
-            else:
-                logger.info(f"{symbol} Decision: BEARISH")
-        except Exception as e:
-            logger.error(f"Could not scan {symbol}: {e}")
-    logger.info("--- DIAGNOSTIC SIGNAL SCAN END ---")
-    
-def try_buy(symbol):
-    if time.time() - state["last_trade_time"].get(symbol, 0) < COOLDOWN_SECONDS: return
-    
-    try:
-        bars = data_api.get_stock_bars(StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, limit=200)).df
+    for sym in MY_SYMBOLS:
+        bars = get_bars(sym, limit=200)
+        if bars is None: continue
+        
         price = float(bars["close"].iloc[-1])
-        if price < bars["close"].mean(): return
-
-        invest = float(api.get_account().cash) * MAX_CAPITAL_USAGE
-        if invest < MIN_ORDER_VALUE: return
-
-        api.submit_order(LimitOrderRequest(symbol=symbol, qty=round(invest/price, 4), side=OrderSide.BUY, 
-                                           type="limit", limit_price=price, time_in_force=TimeInForce.DAY))
-        state["last_trade_time"][symbol] = time.time()
-        state["highs"][symbol] = price
-        save_state()
-        logger.info(f"✅ BUY {symbol} @ {price}")
-    except Exception as e: logger.error(f"Buy error {symbol}: {e}")
+        ma = float(bars["close"].mean())
+        
+        logger.info(f"Calculating signal for {sym}")
+        logger.info(f"{sym} Price: {price:.2f}")
+        
+        if price > ma:
+            logger.info(f"{sym} Decision: YES | Reason: Bullish (Price {price:.2f} > MA {ma:.2f})")
+        else:
+            logger.info(f"{sym} Decision: NO | Reason: Trend not bullish (Price {price:.2f} < MA {ma:.2f})")
+    logger.info("--- DIAGNOSTIC SIGNAL SCAN END ---")
 
 # =========================
 # MAIN LOOP
 # =========================
+logger.info("🚀 Sentinel v2 Running")
+
 while True:
-        # Check market clock
-        clock = api.get_clock()
-        
-        if clock.is_open and trading_enabled:
-            # Run diagnostics every 30 minutes
+    try:
+        if api.get_clock().is_open and trading_enabled:
+            # Trigger diagnostics every 30 minutes (1800 seconds)
             if int(time.time()) % 1800 < 60:
                 log_diagnostics()
-            
-            # Trading logic
-            try:
-                manage_positions()
-                if market_trend_ok():
-                    for sym in MY_SYMBOLS:
-                        try_buy(sym)
-            except Exception as e:
-                logger.error(f"Loop error: {e}")
-        else:
-            # Clear logging to prevent spamming
-            if int(time.time()) % 300 < 5: 
-                logger.info(f"Market Closed. Trading Enabled: {trading_enabled}")
 
-        # Reduce sleep from 60 to 1 for faster execution
-        time.sleep(1)
+            check_circuit_breaker()
+            manage_positions()
+
+            if market_trend_ok():
+                for sym in MY_SYMBOLS:
+                    try_buy(sym)
+        
+        time.sleep(60)
+
+    except Exception as e:
+        logger.error(f"Loop crash: {e}")
+        time.sleep(120)
