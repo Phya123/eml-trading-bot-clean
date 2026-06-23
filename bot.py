@@ -78,7 +78,23 @@ def manage_positions():
             logger.info(f"📢 EXITING {sym} @ {price} | Reason: {exit_reason}")
             api.close_position(sym)
     save_state()
-
+def log_diagnostics():
+    """Prints a professional diagnostic snapshot of the market."""
+    logger.info("--- DIAGNOSTIC SIGNAL SCAN START ---")
+    for symbol in MY_SYMBOLS:
+        try:
+            bars = data_api.get_stock_bars(StockBarRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, limit=200))
+            current_price = float(bars['close'].iloc[-1])
+            trend_avg = float(bars['close'].mean())
+            logger.info(f"{symbol} Price: {current_price:.2f} | Trend Avg (200): {trend_avg:.2f}")
+            if current_price > trend_avg:
+                logger.info(f"{symbol} Decision: BULLISH")
+            else:
+                logger.info(f"{symbol} Decision: BEARISH")
+        except Exception as e:
+            logger.error(f"Could not scan {symbol}: {e}")
+    logger.info("--- DIAGNOSTIC SIGNAL SCAN END ---")
+    
 def try_buy(symbol):
     if time.time() - state["last_trade_time"].get(symbol, 0) < COOLDOWN_SECONDS: return
     
@@ -102,13 +118,14 @@ def try_buy(symbol):
 # MAIN LOOP
 # =========================
 logger.info("🚀 Sentinel v2.1 Online")
-while True:
-    if api.get_clock().is_open and trading_enabled:
-        try:
-            acc = api.get_account()
-            if state["start_equity"] is None: state["start_equity"] = float(acc.equity); save_state()
-            if float(acc.equity) < float(state["start_equity"]) * (1 - DAILY_LOSS_LIMIT): trading_enabled = False
-            
+120:    while True:
+121:        # Add this diagnostic check
+122:        if int(time.time()) % 1800 < 60:
+123:            log_diagnostics()
+124:
+125:        if api.get_clock().is_open and trading_enabled:
+126:            try:
+127:                # ... rest of your code ...
             manage_positions()
             if market_trend_ok():
                 for sym in MY_SYMBOLS: try_buy(sym)
