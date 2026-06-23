@@ -15,9 +15,14 @@ STOP_LOSS_PCT, TAKE_PROFIT_PCT, TRAILING_STOP_PCT = 0.02, 0.05, 0.02
 DAILY_LOSS_LIMIT, MA_PERIOD, COOLDOWN_SECONDS = 0.03, 200, 1800
 STATE_FILE = "sentinel_state.json"
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger()
+import sys
+import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    stream=sys.stdout  # This forces the logs to standard output, removing the 'error' flag
+)
 api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"), paper=False)
 data_api = StockHistoricalDataClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"))
 
@@ -55,8 +60,18 @@ def manage_positions():
         sym, entry, price = p.symbol, float(p.avg_entry_price), float(p.current_price)
         state["highs"][sym] = max(state["highs"].get(sym, price), price)
         
-        if price <= entry * (1 - STOP_LOSS_PCT) or price >= entry * (1 + TAKE_PROFIT_PCT) or price <= state["highs"][sym] * (1 - TRAILING_STOP_PCT):
-            logger.info(f"📢 EXITING {sym} @ {price}")
+        # Determine exit reason
+        exit_reason = None
+        if price <= entry * (1 - STOP_LOSS_PCT):
+            exit_reason = "Stop Loss"
+        elif price >= entry * (1 + TAKE_PROFIT_PCT):
+            exit_reason = "Take Profit"
+        elif price <= state["highs"][sym] * (1 - TRAILING_STOP_PCT):
+            exit_reason = "Trailing Stop"
+
+        # Execute exit if any reason was met
+        if exit_reason:
+            logger.info(f"📢 EXITING {sym} @ {price} | Reason: {exit_reason}")
             api.close_position(sym)
     save_state()
 
