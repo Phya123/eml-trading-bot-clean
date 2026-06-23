@@ -35,7 +35,19 @@ trading_enabled = True
 def get_market_trend():
     bars = data_api.get_stock_bars(StockBarsRequest(symbol_or_symbols="SPY", timeframe=TimeFrame.Day, limit=MA_PERIOD)).df
     return bars["close"].iloc[-1] > bars["close"].mean() if not bars.empty else False
-
+def check_circuit_breaker():
+    global trading_enabled
+    try:
+        acc = api.get_account()
+        if state["start_equity"] is None:
+            state["start_equity"] = float(acc.equity)
+        
+        equity = float(acc.equity)
+        if equity < float(state["start_equity"]) * (1 - DAILY_LOSS_LIMIT):
+            logger.critical("🚨 CIRCUIT BREAKER TRIGGERED")
+            trading_enabled = False
+    except Exception as e:
+        logger.error(f"Circuit breaker check failed: {e}")
 def run_sentinel():
     global trading_enabled
     logger.info("Running sentinel cycle")
