@@ -54,8 +54,22 @@ def check_circuit_breaker():
 def market_trend_ok(symbol):
     try:
         bars = data_api.get_bars(StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, limit=MA_PERIOD))
-        return bars[-1].close > bars.close.mean()
+        
+        # Calculate price and MA200
+        price = float(bars["close"].iloc[-1])
+        ma200 = float(bars["close"].mean())
+        
+        # Log the diagnostic data
+        logger.info(f"{symbol} Price: {price:.2f} MA200={ma200:.2f}")
+        
+        # Trend filter logic
+        if price < ma200:
+            logger.info(f"Skipping {symbol}: Price {price:.2f} below MA200 {ma200:.2f}")
+            return False
+            
+        return True
     except Exception as e:
+        logger.error(f"Trend check error: {e}")
         return False
 
 def try_buy(symbol):
