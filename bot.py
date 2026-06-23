@@ -1,4 +1,16 @@
 import os, time, logging, json
+import sys
+import logging
+import json # Ensure all imports are at the top
+
+# --- ADD THIS BLOCK BACK IN ---
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    stream=sys.stdout
+)
+logger = logging.getLogger()
+# ------------------------------
 from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
@@ -15,14 +27,6 @@ STOP_LOSS_PCT, TAKE_PROFIT_PCT, TRAILING_STOP_PCT = 0.02, 0.05, 0.02
 DAILY_LOSS_LIMIT, MA_PERIOD, COOLDOWN_SECONDS = 0.03, 200, 1800
 STATE_FILE = "sentinel_state.json"
 
-import sys
-import logging
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    stream=sys.stdout  # This forces the logs to standard output, removing the 'error' flag
-)
 api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"), paper=False)
 data_api = StockHistoricalDataClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"))
 
