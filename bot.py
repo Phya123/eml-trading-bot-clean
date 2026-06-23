@@ -86,22 +86,22 @@ def manage_positions():
 logger.info("🚀 Sentinel v2.1 Online")
 
 while True:
-    if api.get_clock().is_open and trading_enabled:
-        try:
-            # 1. Global Checks
-            check_circuit_breaker()
-            
-            # 2. Check each symbol independently
-            for sym in MY_SYMBOLS:
-                # Only check trend for the specific symbol (or keep SPY as global filter)
-                if market_trend_ok(): 
-                    try_buy(sym)
-                else:
-                    logger.info(f"Skipping {sym}: Market trend filter not met.")
+        if api.get_clock().is_open and trading_enabled:
+            try:
+                # 1. Global Checks
+                check_circuit_breaker()
 
-            manage_positions()
+                # 2. Check each symbol independently
+                for sym in MY_SYMBOLS:
+                    if market_trend_ok(sym):
+                        try_buy(sym)
+                    else:
+                        logger.info(f"Skipping {sym}: Market trend filter not met.")
 
-        except Exception as e:
-            logger.error(f"Loop error: {e}")
-            
-    time.sleep(60)
+                # 3. Manage existing positions
+                manage_positions()
+                
+            except Exception as e:
+                logger.error(f"Loop error: {e}")
+        
+        time.sleep(60)
