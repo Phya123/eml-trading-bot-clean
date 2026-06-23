@@ -5,19 +5,10 @@ from alpaca.data.requests import StockBarRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.requests import LimitOrderRequest
 from alpaca.trading.enums import OrderSide, TimeForce
-# --- ADD THIS BLOCK BACK IN ---
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    stream=sys.stdout
-)
+
+# Configure logging to stdout to satisfy Railway/Environment requirements
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout)
 logger = logging.getLogger()
-# ------------------------------
-from alpaca.trading.client import TradingClient
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
-from alpaca.trading.requests import LimitOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 
 # =========================
