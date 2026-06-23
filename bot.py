@@ -53,11 +53,14 @@ def check_circuit_breaker():
 
 def market_trend_ok(symbol):
     try:
-        bars = data_api.get_bars(StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, limit=MA_PERIOD))
+        # CHANGE: Use data_api.get_stock_bars instead of data_api.get_bars
+        bars = data_api.get_stock_bars(StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, limit=MA_PERIOD))
         
         # Calculate price and MA200
-        price = float(bars["close"].iloc[-1])
-        ma200 = float(bars["close"].mean())
+        # NOTE: alpaca-py returns bars in a format that needs to be converted to a DataFrame
+        df = bars.df
+        price = float(df["close"].iloc[-1])
+        ma200 = float(df["close"].mean())
         
         # Log the diagnostic data
         logger.info(f"{symbol} Price: {price:.2f} MA200={ma200:.2f}")
@@ -68,6 +71,9 @@ def market_trend_ok(symbol):
             return False
             
         return True
+    except Exception as e:
+        logger.error(f"Trend check error: {e}")
+        return False
     except Exception as e:
         logger.error(f"Trend check error: {e}")
         return False
