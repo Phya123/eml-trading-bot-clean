@@ -81,10 +81,24 @@ def market_trend_ok(symbol):
 def try_buy(symbol):
     try:
         positions = api.get_all_positions()
+        # Check if we already own this specific symbol
         if not any(p.symbol == symbol for p in positions):
             if float(api.get_account().buying_power) > MIN_ORDER_VALUE:
-                api.submit_order(symbol=symbol, qty=1, side=OrderSide.BUY, type="market", time_in_force="day")
+                
+                # 1. Create the request object using the variable 'symbol'
+                order_data = MarketOrderRequest(
+                    symbol=symbol,
+                    qty=1,
+                    side=OrderSide.BUY,
+                    time_in_force=TimeInForce.DAY
+                )
+                
+                # 2. Submit the request object
+                api.submit_order(order_data=order_data)
                 logger.info(f"Bought {symbol}")
+                
+    except Exception as e:
+        logger.error(f"Buy failed for {symbol}: {e}")
     except Exception as e:
         logger.error(f"Buy failed for {symbol}: {e}")
 
