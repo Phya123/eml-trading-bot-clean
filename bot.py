@@ -117,8 +117,14 @@ def try_buy(symbol):
 # =========================
 # MAIN LOOP
 # =========================
-logger.info("🚀 Sentinel v2.1 Online")
-120:    while True:
+while True:
+        # Add this diagnostic check
+        if int(time.time()) % 1800 < 60:
+            log_diagnostics()
+
+        if api.get_clock().is_open and trading_enabled:
+            try:
+                # ... rest of your code ...
 121:        # Add this diagnostic check
 122:        if int(time.time()) % 1800 < 60:
 123:            log_diagnostics()
