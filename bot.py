@@ -31,16 +31,12 @@ logger = logging.getLogger()
 # =========================
 # API INITIALIZATION
 # =========================
-# Change this line in your API initialization block:
-api = TradingClient(
-    os.environ.get("APCA_API_KEY_ID"),
-    os.environ.get("APCA_API_SECRET_KEY"),
-    paper=False  # <--- MUST BE FALSE FOR LIVE ACCOUNT
-)
+# paper=False for Live trading
+api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"), paper=False)
 data_api = StockHistoricalDataClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"))
 
 # =========================
-# STATE MANAGEMENT
+# STATE
 # =========================
 def load_state():
     if os.path.exists(STATE_FILE):
@@ -54,11 +50,11 @@ def save_state():
     with open(STATE_FILE, "w") as f: json.dump(state, f)
 
 # =========================
-# HELPERS & DIAGNOSTICS
+# LOGIC FUNCTIONS
 # =========================
-def get_bars(symbol, limit=200, timeframe=TimeFrame.Day):
+def get_bars(symbol, limit=200):
     try:
-        return data_api.get_stock_bars(StockBarsRequest(symbol_or_symbols=symbol, timeframe=timeframe, limit=limit)).df
+        return data_api.get_stock_bars(StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, limit=limit)).df
     except Exception as e:
         logger.error(f"Bars error {symbol}: {e}")
         return None
@@ -111,7 +107,7 @@ def try_buy(symbol):
 # =========================
 # MAIN LOOP
 # =========================
-logger.info("🚀 Sentinel v2 Running")
+logger.info("🚀 Sentinel v2 Running (LIVE MODE)")
 while True:
     try:
         # Diagnostic Scan every 30 minutes
