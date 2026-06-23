@@ -88,17 +88,21 @@ logger.info("🚀 Sentinel v2.1 Online")
 while True:
         if api.get_clock().is_open and trading_enabled:
             try:
-                # 1. Global Checks
+                # 1. Log Account Status
+                acc = api.get_account()
+                logger.info(f"Account Balance: ${acc.cash} | Equity: ${acc.equity}")
+                
+                # 2. Global Checks
                 check_circuit_breaker()
-
-                # 2. Check each symbol independently
+                
+                # 3. Check each symbol independently
                 for sym in MY_SYMBOLS:
                     if market_trend_ok(sym):
                         try_buy(sym)
                     else:
                         logger.info(f"Skipping {sym}: Market trend filter not met.")
-
-                # 3. Manage existing positions
+                
+                # 4. Manage existing positions
                 manage_positions()
                 
             except Exception as e:
