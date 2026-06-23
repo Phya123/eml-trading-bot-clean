@@ -118,27 +118,19 @@ def try_buy(symbol):
 # MAIN LOOP
 # =========================
 while True:
-        while True:
-        # Add this diagnostic check
+        # 1. Run diagnostic scan every 30 minutes
         if int(time.time()) % 1800 < 60:
             log_diagnostics()
 
+        # 2. Main trading logic
         if api.get_clock().is_open and trading_enabled:
             try:
-                # rest of your code...
-
-        if api.get_clock().is_open and trading_enabled:
-            try:
-                # ... rest of your code ...
-        # Add this diagnostic check
-        if int(time.time()) % 1800 < 60:
-            log_diagnostics()
-
-        if api.get_clock().is_open and trading_enabled:
-            try:
-                # ... rest of your code ...
-            manage_positions()
-            if market_trend_ok():
-                for sym in MY_SYMBOLS: try_buy(sym)
-        except Exception as e: logger.error(f"Loop error: {e}")
-    time.sleep(60)
+                manage_positions()
+                if market_trend_ok():
+                    for sym in MY_SYMBOLS:
+                        try_buy(sym)
+            except Exception as e:
+                logger.error(f"Loop error: {e}")
+        
+        # 3. Sleep to prevent CPU overload
+        time.sleep(60)
