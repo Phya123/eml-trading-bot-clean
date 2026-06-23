@@ -73,25 +73,34 @@ def market_trend_ok(symbol):
             
         return True
     except Exception as e:
-        logger.error(f"Trend check error: {e}")
-        return False
-    except Exception as e:
-        logger.error(f"Trend check error: {e}")
-        return False
-
-def try_buy(symbol):
+        def try_buy(symbol):
     try:
+        # Get your total available buying power
+        buying_power = float(api.get_account().buying_power)
+        
+        # Calculate how much to spend based on your MAX_CAPITAL_USAGE (0.15)
+        spend_amount = buying_power * MAX_CAPITAL_USAGE
+        
         positions = api.get_all_positions()
-        # Check if we already own this specific symbol
+        
+        # Ensure we don't already own the symbol and have enough power
         if not any(p.symbol == symbol for p in positions):
-            if float(api.get_account().buying_power) > MIN_ORDER_VALUE:
+            if buying_power >= spend_amount and spend_amount >= MIN_ORDER_VALUE:
                 
-                # 1. Create the request object using the variable 'symbol'
+                # Use 'notional' to buy a fractional share based on the dollar amount
                 order_data = MarketOrderRequest(
                     symbol=symbol,
-                    qty=1,
+                    notional=spend_amount,
                     side=OrderSide.BUY,
                     time_in_force=TimeInForce.DAY
+                )
+                
+                api.submit_order(order_data=order_data)
+                logger.info(f"Bought ${spend_amount:.2f} of {symbol}")
+                
+    except Exception as e:
+        logger.error(f"Buy failed for {symbol}: {e}")
+        
                 )
                 
                 # 2. Submit the request object
