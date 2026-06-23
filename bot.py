@@ -73,7 +73,28 @@ def market_trend_ok(symbol):
             
         return True
     except Exception as e:
+        logger.error(f"Trend check error: {e}")
+        return False
+
 def try_buy(symbol):
+    try:
+        buying_power = float(api.get_account().buying_power)
+        spend_amount = buying_power * MAX_CAPITAL_USAGE
+        positions = api.get_all_positions()
+        
+        if not any(p.symbol == symbol for p in positions):
+            if buying_power >= spend_amount and spend_amount >= MIN_ORDER_VALUE:
+                order_data = MarketOrderRequest(
+                    symbol=symbol,
+                    notional=spend_amount,
+                    side=OrderSide.BUY,
+                    time_in_force=TimeInForce.DAY
+                )
+                api.submit_order(order_data=order_data)
+                logger.info(f"Bought ${spend_amount:.2f} of {symbol}")
+                
+    except Exception as e:
+        logger.error(f"Buy failed for {symbol}: {e}")
     try:
         # Get your total available buying power
         buying_power = float(api.get_account().buying_power)
