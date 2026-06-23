@@ -118,6 +118,18 @@ def try_buy(symbol):
 # MAIN LOOP
 # =========================
 while True:
+        while True:
+        # Add this diagnostic check
+        if int(time.time()) % 1800 < 60:
+            log_diagnostics()
+
+        if api.get_clock().is_open and trading_enabled:
+            try:
+                # rest of your code...
+
+        if api.get_clock().is_open and trading_enabled:
+            try:
+                # ... rest of your code ...
         # Add this diagnostic check
         if int(time.time()) % 1800 < 60:
             log_diagnostics()
@@ -125,13 +137,6 @@ while True:
         if api.get_clock().is_open and trading_enabled:
             try:
                 # ... rest of your code ...
-121:        # Add this diagnostic check
-122:        if int(time.time()) % 1800 < 60:
-123:            log_diagnostics()
-124:
-125:        if api.get_clock().is_open and trading_enabled:
-126:            try:
-127:                # ... rest of your code ...
             manage_positions()
             if market_trend_ok():
                 for sym in MY_SYMBOLS: try_buy(sym)
