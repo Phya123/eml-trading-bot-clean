@@ -8,7 +8,7 @@ from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.requests import LimitOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 
-# CONFIG
+# CONFIG & LOGGING
 MY_SYMBOLS = ["XLE", "SPCX", "QQQ", "SPY"]
 MAX_CAPITAL_USAGE = 0.15
 MIN_ORDER_VALUE = 5.00
@@ -20,15 +20,14 @@ MA_PERIOD = 200
 COOLDOWN_SECONDS = 1800
 STATE_FILE = "sentinel_state.json"
 
-# LOGGING
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", stream=sys.stdout)
 logger = logging.getLogger()
 
-# API
+# API INITIALIZATION (Live Mode)
 api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"), paper=False)
 data_api = StockHistoricalDataClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"))
 
-# STATE
+# STATE MANAGEMENT
 def load_state():
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r") as f: return json.load(f)
@@ -40,7 +39,7 @@ trading_enabled = True
 def save_state():
     with open(STATE_FILE, "w") as f: json.dump(state, f)
 
-# HELPERS
+# HELPERS & LOGIC
 def get_bars(symbol, limit=200):
     try:
         return data_api.get_stock_bars(StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, limit=limit)).df
