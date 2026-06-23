@@ -57,14 +57,28 @@ def run_sentinel():
         logger.info(f"Checking symbol: {sym}")
         # Add your buy logic here...
 
+# =========================
 # MAIN LOOP
-logger.info("Sentinel started")
+# =========================
+logger.info("🚀 Sentinel v2.1 Online")
+
 while True:
-    try:
-        if api.get_clock().is_open and trading_enabled:
-            run_sentinel()
-        time.sleep(60)
-    except Exception as e:
-        logger.error(f"Loop Error: {e}")
-        logger.error(traceback.format_exc())
-        time.sleep(120)
+    if api.get_clock().is_open and trading_enabled:
+        try:
+            # 1. Global Checks
+            check_circuit_breaker()
+            
+            # 2. Check each symbol independently
+            for sym in MY_SYMBOLS:
+                # Only check trend for the specific symbol (or keep SPY as global filter)
+                if market_trend_ok(): 
+                    try_buy(sym)
+                else:
+                    logger.info(f"Skipping {sym}: Market trend filter not met.")
+
+            manage_positions()
+
+        except Exception as e:
+            logger.error(f"Loop error: {e}")
+            
+    time.sleep(60)
