@@ -6,18 +6,9 @@ from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.requests import LimitOrderRequest
 from alpaca.trading.enums import OrderSide, TimeForce
 
-# Configure logging to stdout to satisfy Railway/Environment requirements
+# Configure logging to stdout
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout)
 logger = logging.getLogger()
-from alpaca.trading.enums import OrderSide, TimeInForce
-
-# =========================
-# CONFIG & STATE
-# =========================
-MY_SYMBOLS = ["XLE", "SPCX", "QQQ", "SPY"]
-MAX_CAPITAL_USAGE, MIN_ORDER_VALUE = 0.15, 5.00
-STOP_LOSS_PCT, TAKE_PROFIT_PCT, TRAILING_STOP_PCT = 0.02, 0.05, 0.02
-DAILY_LOSS_LIMIT, MA_PERIOD, COOLDOWN_SECONDS = 0.03, 200, 1800
 STATE_FILE = "sentinel_state.json"
 
 api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"), paper=False)
