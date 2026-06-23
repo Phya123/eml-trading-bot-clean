@@ -73,7 +73,7 @@ def market_trend_ok(symbol):
             
         return True
     except Exception as e:
-     def try_buy(symbol):
+def try_buy(symbol):
     try:
         # Get your total available buying power
         buying_power = float(api.get_account().buying_power)
@@ -99,19 +99,7 @@ def market_trend_ok(symbol):
                 logger.info(f"Bought ${spend_amount:.2f} of {symbol}")
                 
     except Exception as e:
-        logger.error(f"Buy failed for {symbol}: {e}")   
-def manage_positions():
-    try:
-        for p in api.get_all_positions():
-            if float(p.current_price) >= float(p.avg_entry_price) * (1 + TAKE_PROFIT_PCT):
-                api.close_position(p.symbol)
-                logger.info(f"Take profit hit for {p.symbol}")
-    except Exception as e:
-        logger.error(f"Position management failed: {e}")
-
-# 3. MAIN LOOP (Starts at the bottom)
-
-
+        logger.error(f"Buy failed for {symbol}: {e}")
 # =========================
 # MAIN LOOP
 # =========================
