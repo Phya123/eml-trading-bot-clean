@@ -49,7 +49,7 @@ logger = logging.getLogger()
 api = TradingClient(
     os.environ.get("APCA_API_KEY_ID"),
     os.environ.get("APCA_API_SECRET_KEY"),
-    paper=True
+    paper=False
 )
 
 data_api = StockHistoricalDataClient(
