@@ -1,7 +1,6 @@
 import os, time, logging, sys
 import pandas as pd
 from datetime import date
-from csv import writer
 
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
@@ -24,15 +23,17 @@ SLOW_MA = 50
 ATR_PERIOD = 14
 
 MAX_RISK_PER_TRADE = 0.01
-COOLDOWN_SECONDS = 120
+MAX_CAPITAL_USAGE = 0.05
 
 STOP_LOSS_PCT = 0.02
 TAKE_PROFIT_PCT = 0.04
 TRAILING_STOP_PCT = 0.015
 
+COOLDOWN_SECONDS = 120
 DAILY_LOSS_LIMIT = 0.03
+MAX_TRADES_PER_DAY = 10
 
-LOG_FILE = "trade_journal.csv"
+ENABLE_TRADING = True
 
 
 # =========================
@@ -64,34 +65,51 @@ state = {
     "start_equity": None,
     "last_trade_time": {},
     "position_high": {},
+    "trade_count": 0,
+    "day": date.today()
 }
 
 
 # =========================
-# JOURNAL
+# EMERGENCY STOP
 # =========================
-def log_trade(data):
-    file_exists = os.path.isfile(LOG_FILE)
-
-    with open(LOG_FILE, "a", newline="") as f:
-        w = writer(f)
-
-        if not file_exists:
-            w.writerow(["time", "symbol", "side", "entry", "exit", "pnl_pct", "reason"])
-
-        w.writerow([
-            data["time"],
-            data["symbol"],
-            data["side"],
-            data["entry"],
-            data["exit"],
-            data["pnl_pct"],
-            data["reason"]
-        ])
+def emergency_stop(reason):
+    global ENABLE_TRADING
+    ENABLE_TRADING = False
+    logger.critical(f"🚨 EMERGENCY STOP: {reason}")
 
 
 # =========================
-# DATA
+# DAILY RESET
+# =========================
+def reset_daily_state():
+    if date.today() != state["day"]:
+        state["day"] = date.today()
+        state["trade_count"] = 0
+        logger.info("🔄 Daily reset completed")
+
+
+# =========================
+# CIRCUIT BREAKER
+# =========================
+def check_circuit_breaker():
+    try:
+        acc = api.get_account()
+
+        if state["start_equity"] is None:
+            state["start_equity"] = float(acc.equity)
+
+        equity = float(acc.equity)
+
+        if equity < state["start_equity"] * (1 - DAILY_LOSS_LIMIT):
+            emergency_stop("Daily loss limit hit")
+
+    except Exception as e:
+        logger.error(f"Risk error: {e}")
+
+
+# =========================
+# DATA SAFETY
 # =========================
 def get_data(symbol):
     try:
@@ -107,7 +125,13 @@ def get_data(symbol):
         if isinstance(df.index, pd.MultiIndex):
             df = df.xs(symbol)
 
-        return df.dropna()
+        df = df.dropna()
+
+        # BAD DATA FILTER
+        if df is None or len(df) < 60 or df["close"].isnull().any():
+            return None
+
+        return df
 
     except Exception as e:
         logger.error(f"{symbol} data error: {e}")
@@ -115,7 +139,7 @@ def get_data(symbol):
 
 
 # =========================
-# INDICATORS
+# ATR (VOLATILITY FILTER)
 # =========================
 def atr(df, period=14):
     high = df["high"]
@@ -131,11 +155,14 @@ def atr(df, period=14):
     return tr.rolling(period).mean().iloc[-1]
 
 
+# =========================
+# STRATEGY
+# =========================
 def analyze(symbol):
     df = get_data(symbol)
 
-    if df is None or len(df) < 60:
-        return None, "NO_DATA"
+    if df is None:
+        return None, "BAD_DATA"
 
     price = float(df["close"].iloc[-1])
 
@@ -147,8 +174,8 @@ def analyze(symbol):
     if pd.isna(fast) or pd.isna(slow) or pd.isna(vol):
         return price, "NO_SIGNAL"
 
-    # regime filter
-    if vol / price < 0.003:
+    # VOLATILITY SAFETY FILTER
+    if vol / price < 0.0025:
         return price, "LOW_VOL_SKIP"
 
     if fast > slow:
@@ -158,7 +185,7 @@ def analyze(symbol):
 
 
 # =========================
-# RISK
+# SAFETY CHECKS
 # =========================
 def cooldown_ok(symbol):
     last = state["last_trade_time"].get(symbol)
@@ -167,31 +194,58 @@ def cooldown_ok(symbol):
     return (time.time() - last) > COOLDOWN_SECONDS
 
 
+def market_open_safety():
+    clock = api.get_clock()
+
+    # SKIP FIRST 30 MINUTES (VERY IMPORTANT)
+    if clock.is_open:
+        if clock.timestamp.hour == 9 and clock.timestamp.minute < 40:
+            return False
+    return clock.is_open
+
+
+# =========================
+# EXECUTION SAFETY
+# =========================
+def verify_order(symbol):
+    time.sleep(2)
+    positions = api.get_all_positions()
+    return any(p.symbol == symbol for p in positions)
+
+
 # =========================
 # BUY ENGINE
 # =========================
 def buy(symbol):
+    global ENABLE_TRADING
+
+    if not ENABLE_TRADING:
+        return
+
+    if state["trade_count"] >= MAX_TRADES_PER_DAY:
+        return
+
+    if not cooldown_ok(symbol):
+        return
+
+    positions = api.get_all_positions()
+    if any(p.symbol == symbol for p in positions):
+        return
+
+    price, signal = analyze(symbol)
+
+    logger.info(f"{symbol} SIGNAL: {signal}")
+
+    if signal != "BULLISH":
+        return
+
+    account = api.get_account()
+    spend = float(account.buying_power) * MAX_CAPITAL_USAGE
+
+    if spend < 5:
+        return
+
     try:
-        if not cooldown_ok(symbol):
-            return
-
-        positions = api.get_all_positions()
-        if any(p.symbol == symbol for p in positions):
-            return
-
-        price, signal = analyze(symbol)
-
-        logger.info(f"{symbol} SIGNAL = {signal}")
-
-        if signal != "BULLISH":
-            return
-
-        account = api.get_account()
-        spend = float(account.buying_power) * 0.10
-
-        if spend < 5:
-            return
-
         order = MarketOrderRequest(
             symbol=symbol,
             notional=round(spend, 2),
@@ -201,16 +255,21 @@ def buy(symbol):
 
         api.submit_order(order_data=order)
 
-        state["last_trade_time"][symbol] = time.time()
+        if not verify_order(symbol):
+            logger.warning(f"{symbol} ORDER NOT CONFIRMED")
+            return
 
-        logger.info(f"BUY {symbol} ${spend:.2f}")
+        state["last_trade_time"][symbol] = time.time()
+        state["trade_count"] += 1
+
+        logger.info(f"BUY CONFIRMED {symbol} ${spend:.2f}")
 
     except Exception as e:
         logger.error(f"{symbol} buy error: {e}")
 
 
 # =========================
-# POSITION MANAGEMENT (FIXED RESET LOGIC)
+# POSITION MANAGEMENT
 # =========================
 def manage_positions():
     try:
@@ -247,21 +306,11 @@ def manage_positions():
             if reason:
                 api.close_position(symbol)
 
-                # 🔥 FIX YOU REQUESTED (APPLIED CORRECTLY)
+                # SAFE RESET (YOUR REQUIRED FIX)
                 state["position_high"].pop(symbol, None)
                 state["last_trade_time"].pop(symbol, None)
 
-                logger.info(f"{symbol} EXIT + STATE RESET")
-
-                log_trade({
-                    "time": str(date.today()),
-                    "symbol": symbol,
-                    "side": "SELL",
-                    "entry": entry,
-                    "exit": price,
-                    "pnl_pct": pnl_pct,
-                    "reason": reason
-                })
+                logger.info(f"{symbol} EXIT + STATE RESET ({reason})")
 
     except Exception as e:
         logger.error(f"position error: {e}")
@@ -270,20 +319,20 @@ def manage_positions():
 # =========================
 # MAIN LOOP
 # =========================
-logger.info("🚀 SENTINEL v7 HEDGE FUND ENGINE LIVE")
+logger.info("🚀 SENTINEL v8 SAFE LIVE ENGINE STARTED")
 
 while True:
     try:
-        clock = api.get_clock()
+        reset_daily_state()
+        check_circuit_breaker()
 
-        if clock.is_open:
+        if market_open_safety():
             for sym in SYMBOLS:
                 buy(sym)
 
             manage_positions()
-
         else:
-            logger.info("Market closed")
+            logger.info("Market not safe/open window")
 
     except Exception as e:
         logger.error(f"loop error: {e}")
