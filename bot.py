@@ -6,8 +6,6 @@ from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
-from alpaca.trading.requests import LimitOrderRequest
-from alpaca.trading.enums import OrderSide, TimeInForce
 
 # CONFIG
 MY_SYMBOLS = ["XLE", "SPCX", "QQQ", "SPY"]
@@ -15,10 +13,8 @@ MAX_CAPITAL_USAGE = 0.15
 MIN_ORDER_VALUE = 5.00
 STOP_LOSS_PCT = 0.02
 TAKE_PROFIT_PCT = 0.05
-TRAILING_STOP_PCT = 0.02
 DAILY_LOSS_LIMIT = 0.03
 MA_PERIOD = 200
-COOLDOWN_SECONDS = 1800
 STATE_FILE = "sentinel_state.json"
 
 # LOGGING
@@ -26,19 +22,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger()
 
 # API
-api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"), paper=False)
+api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"), paper=True)
 data_api = StockHistoricalDataClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"))
 
 # STATE
-state = {"start_equity": None, "last_trade_time": {}, "highs": {}}
+state = {"start_equity": None}
 trading_enabled = True
-
-def get_market_trend():
-    bars = data_api.get_stock_bars(StockBarsRequest(symbol_or_symbols="SPY", timeframe=TimeFrame.Day, limit=MA_PERIOD)).df
-    return bars["close"].iloc[-1] > bars["close"].mean() if not bars.empty else False
-# 1. Imports and Setup (Lines 1-31)
-
-# 2. DEFINITIONS (Paste these code blocks individually into their respective spots)
 
 def check_circuit_breaker():
     global trading_enabled
@@ -54,65 +43,56 @@ def check_circuit_breaker():
 
 def market_trend_ok(symbol):
     try:
-        # CHANGE: Use data_api.get_stock_bars instead of data_api.get_bars
         bars = data_api.get_stock_bars(StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, limit=MA_PERIOD))
-        
-        # Calculate price and MA200
-        # NOTE: alpaca-py returns bars in a format that needs to be converted to a DataFrame
         df = bars.df
         price = float(df["close"].iloc[-1])
         ma200 = float(df["close"].mean())
-        
-        # Log the diagnostic data
-        logger.info(f"{symbol} Price: {price:.2f} MA200={ma200:.2f}")
-        
-        # Trend filter logic
         if price < ma200:
-            logger.info(f"Skipping {symbol}: Price {price:.2f} below MA200 {ma200:.2f}")
             return False
-            
         return True
     except Exception as e:
-        logger.error(f"Trend check error: {e}")
+        logger.error(f"Trend check error for {symbol}: {e}")
         return False
+
+def try_buy(symbol):
+    try:
+        positions = api.get_all_positions()
+        if not any(p.symbol == symbol for p in positions):
+            buying_power = float(api.get_account().buying_power)
+            spend_amount = buying_power * MAX_CAPITAL_USAGE
+            
+            if spend_amount >= MIN_ORDER_VALUE:
+                # FIXED: Using notional for fractional share support
+                order_data = MarketOrderRequest(
+                    symbol=symbol,
+                    notional=round(spend_amount, 2),
+                    side=OrderSide.BUY,
+                    time_in_force=TimeInForce.DAY
+                )
+                api.submit_order(order_data=order_data)
+                logger.info(f"Bought ${spend_amount:.2f} of {symbol}")
+    except Exception as e:
+        logger.error(f"Buy failed for {symbol}: {e}")
 
 def manage_positions():
     try:
         for p in api.get_all_positions():
-            # If current price is >= target take profit price
             if float(p.current_price) >= float(p.avg_entry_price) * (1 + TAKE_PROFIT_PCT):
                 api.close_position(p.symbol)
                 logger.info(f"Take profit hit for {p.symbol}")
     except Exception as e:
         logger.error(f"Position management failed: {e}")
 
-def try_buy(symbol):
-    try:
-        # Get your total available buying power
-        buying_power = float(api.get_account().buying_power)
-        
-        # Calculate how much to spend based on your MAX_CAPITAL_USAGE (0.15)
-        spend_amount = buying_power * MAX_CAPITAL_USAGE
-        
-        positions = api.get_all_positions()
-        
-        # Ensure we don't already own the symbol and have enough power
-        if not any(p.symbol == symbol for p in positions):
-            if buying_power >= spend_amount and spend_amount >= MIN_ORDER_VALUE:
-                
-                # Use 'notional' to buy a fractional share based on the dollar amount
-                order_data = MarketOrderRequest(
-                    symbol=symbol,
-                    notional=round(spend_amount, 2), # Corrected: Rounding to 2 decimal places
-                    side=OrderSide.BUY,
-                    time_in_force=TimeInForce.DAY
-                )
-                
-                api.submit_order(order_data=order_data)
-                logger.info(f"Bought ${spend_amount:.2f} of {symbol}")
-                
-    except Exception as e:
-        logger.error(f"Buy failed for {symbol}: {e}")
-                logger.error(f"Loop error: {e}")
-        
-        time.sleep(60)
+# MAIN LOOP
+logger.info("🚀 Sentinel v2.1 Online")
+while True:
+    if api.get_clock().is_open and trading_enabled:
+        try:
+            check_circuit_breaker()
+            for sym in MY_SYMBOLS:
+                if market_trend_ok(sym):
+                    try_buy(sym)
+            manage_positions()
+        except Exception as e:
+            logger.error(f"Loop error: {e}")
+    time.sleep(60)
