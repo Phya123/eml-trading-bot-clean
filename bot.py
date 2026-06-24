@@ -241,16 +241,13 @@ def buy(symbol):
 
     logger.info(f"{symbol} SIGNAL: {signal}")
 
-    if signal == "BULLISH":
-    direction = "BUY"
+# Ensure we only proceed if the signal is BULLISH
+    if signal != "BULLISH":
+        return
 
-elif signal == "BEARISH":
-    direction = "BUY_DIP"
-
-else:
-    return
-
+    # If we reached here, the signal is BULLISH, continue to trade
     account = api.get_account()
+    
     spend = float(account.buying_power) * MAX_CAPITAL_USAGE
 
     if spend < 5:
