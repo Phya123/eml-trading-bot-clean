@@ -168,29 +168,25 @@ def analyze(symbol):
 
     fast = df["close"].rolling(FAST_MA).mean().iloc[-1]
     slow = df["close"].rolling(SLOW_MA).mean().iloc[-1]
-
     vol = atr(df, ATR_PERIOD)
 
     if pd.isna(fast) or pd.isna(slow) or pd.isna(vol):
         return price, "NO_SIGNAL"
 
-trend = "BULLISH" if fast > slow else "BEARISH"
+    trend = "BULLISH" if fast > slow else "BEARISH"
 
-vol_ratio = (vol / price) if price else 0
+    logger.info(
+        f"{symbol} Trend={trend} FastMA={fast:.2f} SlowMA={slow:.2f}"
+    )
 
-logger.info(
-    f"{symbol} Trend={trend} FastMA={fast:.2f} SlowMA={slow:.2f}"
-)
+    logger.info(
+        f"{symbol} Price={price:.2f} ATR={vol:.4f} VolRatio={(vol/price):.4f}"
+    )
 
-logger.info(
-    f"{symbol} Price={price:.2f} ATR={vol:.4f} VolRatio={vol_ratio:.4f}"
-)
+    if vol / price < 0.0025:
+        return price, f"{trend}_LOW_VOL_SKIP"
 
-# volatility filter
-if vol_ratio < 0.0025:
-    return price, f"{trend}_LOW_VOL_SKIP"
-
-return price, trend
+    return price, trend
     
 
 
