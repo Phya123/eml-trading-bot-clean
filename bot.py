@@ -241,7 +241,7 @@ def buy(symbol):
 
     logger.info(f"{symbol} SIGNAL: {signal}")
 
-if signal == "BULLISH":
+    if signal == "BULLISH":
     direction = "BUY"
 
 elif signal == "BEARISH":
