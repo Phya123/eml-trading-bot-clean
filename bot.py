@@ -174,8 +174,8 @@ def analyze(symbol):
     if pd.isna(fast) or pd.isna(slow) or pd.isna(vol):
         return price, "NO_SIGNAL"
 
-    # VOLATILITY SAFETY FILTER
-    trend = "BULLISH" if fast > slow else "BEARISH"
+# VOLATILITY SAFETY FILTER
+trend = "BULLISH" if fast > slow else "BEARISH"
 
 logger.info(
     f"{symbol} Trend={trend} FastMA={fast:.2f} SlowMA={slow:.2f}"
