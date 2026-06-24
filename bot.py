@@ -1,27 +1,47 @@
 import os, time, logging, sys
 import pandas as pd
+from datetime import datetime, date
+
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.trading.client import TradingClient
+
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 
+
+# ======================
 # CONFIG
+# ======================
 MY_SYMBOLS = ["XLE", "SPCX", "QQQ", "SPY"]
+
 MAX_CAPITAL_USAGE = 0.15
 MIN_ORDER_VALUE = 5.00
+
 STOP_LOSS_PCT = 0.02
 TAKE_PROFIT_PCT = 0.05
 TRAILING_STOP_PCT = 0.02
+
 DAILY_LOSS_LIMIT = 0.03
+COOLDOWN_SECONDS = 120
 MA_PERIOD = 200
 
+
+# ======================
 # LOGGING
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", stream=sys.stdout)
+# ======================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    stream=sys.stdout
+)
 logger = logging.getLogger()
 
+
+# ======================
 # API
+# ======================
 api = TradingClient(
     os.environ.get("APCA_API_KEY_ID"),
     os.environ.get("APCA_API_SECRET_KEY"),
@@ -33,9 +53,32 @@ data_api = StockHistoricalDataClient(
     os.environ.get("APCA_API_SECRET_KEY")
 )
 
+
+# ======================
 # STATE
-state = {"start_equity": None}
+# ======================
+state = {
+    "start_equity": None,
+    "daily_pnl": 0.0,
+    "last_trade_time": {},
+    "position_high": {}  # symbol -> highest price since entry
+}
+
 trading_enabled = True
+current_day = date.today()
+
+
+# ======================
+# HELPERS
+# ======================
+def reset_daily_state():
+    global current_day
+    today = date.today()
+
+    if today != current_day:
+        current_day = today
+        state["daily_pnl"] = 0.0
+        logger.info("🔄 Daily state reset")
 
 
 def check_circuit_breaker():
@@ -47,17 +90,17 @@ def check_circuit_breaker():
         if state["start_equity"] is None:
             state["start_equity"] = float(acc.equity)
 
-        current_equity = float(acc.equity)
+        equity = float(acc.equity)
 
-        if current_equity < state["start_equity"] * (1 - DAILY_LOSS_LIMIT):
-            logger.critical("🚨 CIRCUIT BREAKER TRIGGERED - STOPPING TRADING")
+        if equity < state["start_equity"] * (1 - DAILY_LOSS_LIMIT):
             trading_enabled = False
+            logger.critical("🚨 CIRCUIT BREAKER TRIGGERED")
 
     except Exception as e:
-        logger.error(f"Circuit breaker failed: {e}")
+        logger.error(f"Circuit breaker error: {e}")
 
 
-def get_price_data(symbol):
+def get_bars(symbol):
     try:
         req = StockBarsRequest(
             symbol_or_symbols=[symbol],
@@ -66,105 +109,134 @@ def get_price_data(symbol):
         )
 
         bars = data_api.get_stock_bars(req)
-
         df = bars.df
 
-        # handle multi-index safely
         if isinstance(df.index, pd.MultiIndex):
             df = df.xs(symbol)
 
-        df = df.dropna()
-
-        return df
+        return df.dropna()
 
     except Exception as e:
-        logger.error(f"Data fetch error for {symbol}: {e}")
+        logger.error(f"Data error {symbol}: {e}")
         return None
 
 
 def market_trend_ok(symbol):
-    df = get_price_data(symbol)
+    df = get_bars(symbol)
     if df is None or len(df) < MA_PERIOD:
         return False
 
     price = float(df["close"].iloc[-1])
-    ma200 = float(df["close"].rolling(window=MA_PERIOD).mean().iloc[-1])
+    ma200 = float(df["close"].rolling(MA_PERIOD).mean().iloc[-1])
 
-    if price < ma200:
-        logger.info(f"Skipping {symbol}: price {price:.2f} below MA200 {ma200:.2f}")
-        return False
-
-    return True
+    return price > ma200
 
 
+def cooldown_ok(symbol):
+    last = state["last_trade_time"].get(symbol)
+    if not last:
+        return True
+    return (time.time() - last) > COOLDOWN_SECONDS
+
+
+# ======================
+# TRADING LOGIC
+# ======================
 def try_buy(symbol):
     try:
-        positions = api.get_all_positions()
+        if not cooldown_ok(symbol):
+            return
 
+        positions = api.get_all_positions()
         if any(p.symbol == symbol for p in positions):
             return
 
+        if not market_trend_ok(symbol):
+            return
+
         account = api.get_account()
-        buying_power = float(account.buying_power)
+        buy_power = float(account.buying_power)
 
-        spend_amount = buying_power * MAX_CAPITAL_USAGE
-
-        if spend_amount < MIN_ORDER_VALUE:
+        spend = buy_power * MAX_CAPITAL_USAGE
+        if spend < MIN_ORDER_VALUE:
             return
 
         order = MarketOrderRequest(
             symbol=symbol,
-            notional=round(spend_amount, 2),
+            notional=round(spend, 2),
             side=OrderSide.BUY,
             time_in_force=TimeInForce.DAY
         )
 
         api.submit_order(order_data=order)
-        logger.info(f"Bought ${spend_amount:.2f} of {symbol}")
+
+        state["last_trade_time"][symbol] = time.time()
+
+        logger.info(f"BUY: ${spend:.2f} {symbol}")
 
     except Exception as e:
-        logger.error(f"Buy failed for {symbol}: {e}")
+        logger.error(f"Buy error {symbol}: {e}")
 
 
 def manage_positions():
     try:
-        for p in api.get_all_positions():
+        positions = api.get_all_positions()
 
-            entry_price = float(p.avg_entry_price)
-            current_price = float(p.current_price)
+        for p in positions:
+            symbol = p.symbol
+            entry = float(p.avg_entry_price)
+            price = float(p.current_price)
+            qty = float(p.qty)
 
-            pnl_up = entry_price * (1 + TAKE_PROFIT_PCT)
-            pnl_down = entry_price * (1 - STOP_LOSS_PCT)
+            # update trailing high
+            if symbol not in state["position_high"]:
+                state["position_high"][symbol] = price
+            else:
+                state["position_high"][symbol] = max(
+                    state["position_high"][symbol],
+                    price
+                )
+
+            high = state["position_high"][symbol]
 
             # TAKE PROFIT
-            if current_price >= pnl_up:
-                api.close_position(p.symbol)
-                logger.info(f"Take profit hit: {p.symbol}")
+            if price >= entry * (1 + TAKE_PROFIT_PCT):
+                api.close_position(symbol)
+                logger.info(f"TAKE PROFIT {symbol}")
                 continue
 
             # STOP LOSS
-            if current_price <= pnl_down:
-                api.close_position(p.symbol)
-                logger.info(f"Stop loss hit: {p.symbol}")
+            if price <= entry * (1 - STOP_LOSS_PCT):
+                api.close_position(symbol)
+                logger.info(f"STOP LOSS {symbol}")
+                continue
+
+            # TRAILING STOP
+            if price <= high * (1 - TRAILING_STOP_PCT):
+                api.close_position(symbol)
+                logger.info(f"TRAIL STOP {symbol}")
                 continue
 
     except Exception as e:
-        logger.error(f"Position management failed: {e}")
+        logger.error(f"Position error: {e}")
 
 
+# ======================
 # MAIN LOOP
-logger.info("🚀 Sentinel v2.1 FIXED ONLINE")
+# ======================
+logger.info("🚀 Sentinel v3 LIVE")
 
 while True:
     try:
+        reset_daily_state()
+
         clock = api.get_clock()
 
         if clock.is_open and trading_enabled:
             check_circuit_breaker()
 
             for sym in MY_SYMBOLS:
-                if market_trend_ok(sym):
-                    try_buy(sym)
+                try_buy(sym)
 
             manage_positions()
 
