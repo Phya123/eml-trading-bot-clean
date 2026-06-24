@@ -78,18 +78,22 @@ def manage_positions():
         for p in api.get_all_positions():
             entry_price = float(p.avg_entry_price)
             current_price = float(p.current_price)
+            
             # Take Profit
             if current_price >= entry_price * (1 + TAKE_PROFIT_PCT):
                 api.close_position(p.symbol)
                 logger.info(f"Take profit hit for {p.symbol}")
+            
             # Stop Loss
             elif current_price <= entry_price * (1 - STOP_LOSS_PCT):
                 api.close_position(p.symbol)
                 logger.info(f"Stop loss hit for {p.symbol}")
-            # Trailing Stop (Safe check)
+                
+            # Trailing Stop (Safe check for highwater_mark)
             elif hasattr(p, "highwater_mark") and p.highwater_mark and current_price <= float(p.highwater_mark) * (1 - TRAILING_STOP_PCT):
                 api.close_position(p.symbol)
                 logger.info(f"Trailing stop hit for {p.symbol}")
+                
     except Exception as e:
         logger.error(f"Position management failed: {e}")
 
