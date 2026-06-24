@@ -1,5 +1,4 @@
-import os, time, logging, json, sys, traceback
-import pandas as pd
+import os, time, logging, sys
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.trading.client import TradingClient
@@ -13,6 +12,7 @@ MAX_CAPITAL_USAGE = 0.15
 MIN_ORDER_VALUE = 5.00
 STOP_LOSS_PCT = 0.02
 TAKE_PROFIT_PCT = 0.05
+TRAILING_STOP_PCT = 0.02
 DAILY_LOSS_LIMIT = 0.03
 MA_PERIOD = 200
 STATE_FILE = "sentinel_state.json"
@@ -48,6 +48,7 @@ def market_trend_ok(symbol):
         price = float(df["close"].iloc[-1])
         ma200 = float(df["close"].mean())
         if price < ma200:
+            logger.info(f"Skipping {symbol}: Price {price:.2f} below MA200 {ma200:.2f}")
             return False
         return True
     except Exception as e:
@@ -60,9 +61,7 @@ def try_buy(symbol):
         if not any(p.symbol == symbol for p in positions):
             buying_power = float(api.get_account().buying_power)
             spend_amount = buying_power * MAX_CAPITAL_USAGE
-            
             if spend_amount >= MIN_ORDER_VALUE:
-                # FIXED: Using notional for fractional share support
                 order_data = MarketOrderRequest(
                     symbol=symbol,
                     notional=round(spend_amount, 2),
@@ -77,9 +76,20 @@ def try_buy(symbol):
 def manage_positions():
     try:
         for p in api.get_all_positions():
-            if float(p.current_price) >= float(p.avg_entry_price) * (1 + TAKE_PROFIT_PCT):
+            entry_price = float(p.avg_entry_price)
+            current_price = float(p.current_price)
+            # Take Profit
+            if current_price >= entry_price * (1 + TAKE_PROFIT_PCT):
                 api.close_position(p.symbol)
                 logger.info(f"Take profit hit for {p.symbol}")
+            # Stop Loss
+            elif current_price <= entry_price * (1 - STOP_LOSS_PCT):
+                api.close_position(p.symbol)
+                logger.info(f"Stop loss hit for {p.symbol}")
+            # Trailing Stop (Safe check)
+            elif hasattr(p, "highwater_mark") and p.highwater_mark and current_price <= float(p.highwater_mark) * (1 - TRAILING_STOP_PCT):
+                api.close_position(p.symbol)
+                logger.info(f"Trailing stop hit for {p.symbol}")
     except Exception as e:
         logger.error(f"Position management failed: {e}")
 
