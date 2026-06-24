@@ -175,13 +175,21 @@ def analyze(symbol):
         return price, "NO_SIGNAL"
 
     # VOLATILITY SAFETY FILTER
-    if vol / price < 0.0025:
-        return price, "LOW_VOL_SKIP"
+    trend = "BULLISH" if fast > slow else "BEARISH"
 
-    if fast > slow:
-        return price, "BULLISH"
+logger.info(
+    f"{symbol} Trend={trend} FastMA={fast:.2f} SlowMA={slow:.2f}"
+)
 
-    return price, "BEARISH"
+logger.info(
+    f"{symbol} Price={price:.2f} ATR={vol:.4f} VolRatio={(vol/price):.4f}"
+)
+
+if vol / price < 0.0025:
+    return price, f"{trend}_LOW_VOL_SKIP"
+
+return price, trend
+    
 
 
 # =========================
