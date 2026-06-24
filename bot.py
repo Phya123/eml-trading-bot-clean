@@ -241,8 +241,14 @@ def buy(symbol):
 
     logger.info(f"{symbol} SIGNAL: {signal}")
 
-    if signal != "BULLISH":
-        return
+    if signal == "BULLISH":
+    pass  # normal buy
+
+elif signal == "BEARISH":
+    pass  # allow dip entries (same buy engine for now)
+
+else:
+    return
 
     account = api.get_account()
     spend = float(account.buying_power) * MAX_CAPITAL_USAGE
