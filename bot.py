@@ -1,4 +1,5 @@
 import os, time, logging, sys
+import pandas as pd
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.trading.client import TradingClient
@@ -15,98 +16,159 @@ TAKE_PROFIT_PCT = 0.05
 TRAILING_STOP_PCT = 0.02
 DAILY_LOSS_LIMIT = 0.03
 MA_PERIOD = 200
-STATE_FILE = "sentinel_state.json"
 
 # LOGGING
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", stream=sys.stdout)
 logger = logging.getLogger()
 
 # API
-api = TradingClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"), paper=True)
-data_api = StockHistoricalDataClient(os.environ.get("APCA_API_KEY_ID"), os.environ.get("APCA_API_SECRET_KEY"))
+api = TradingClient(
+    os.environ.get("APCA_API_KEY_ID"),
+    os.environ.get("APCA_API_SECRET_KEY"),
+    paper=True
+)
+
+data_api = StockHistoricalDataClient(
+    os.environ.get("APCA_API_KEY_ID"),
+    os.environ.get("APCA_API_SECRET_KEY")
+)
 
 # STATE
 state = {"start_equity": None}
 trading_enabled = True
 
+
 def check_circuit_breaker():
     global trading_enabled
+
     try:
         acc = api.get_account()
+
         if state["start_equity"] is None:
             state["start_equity"] = float(acc.equity)
-        if float(acc.equity) < float(state["start_equity"]) * (1 - DAILY_LOSS_LIMIT):
-            logger.critical("🚨 CIRCUIT BREAKER TRIGGERED")
+
+        current_equity = float(acc.equity)
+
+        if current_equity < state["start_equity"] * (1 - DAILY_LOSS_LIMIT):
+            logger.critical("🚨 CIRCUIT BREAKER TRIGGERED - STOPPING TRADING")
             trading_enabled = False
+
     except Exception as e:
         logger.error(f"Circuit breaker failed: {e}")
 
-def market_trend_ok(symbol):
+
+def get_price_data(symbol):
     try:
-        bars = data_api.get_stock_bars(StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, limit=MA_PERIOD))
+        req = StockBarsRequest(
+            symbol_or_symbols=[symbol],
+            timeframe=TimeFrame.Day,
+            limit=MA_PERIOD
+        )
+
+        bars = data_api.get_stock_bars(req)
+
         df = bars.df
-        price = float(df["close"].iloc[-1])
-        ma200 = float(df["close"].mean())
-        if price < ma200:
-            logger.info(f"Skipping {symbol}: Price {price:.2f} below MA200 {ma200:.2f}")
-            return False
-        return True
+
+        # handle multi-index safely
+        if isinstance(df.index, pd.MultiIndex):
+            df = df.xs(symbol)
+
+        df = df.dropna()
+
+        return df
+
     except Exception as e:
-        logger.error(f"Trend check error for {symbol}: {e}")
+        logger.error(f"Data fetch error for {symbol}: {e}")
+        return None
+
+
+def market_trend_ok(symbol):
+    df = get_price_data(symbol)
+    if df is None or len(df) < MA_PERIOD:
         return False
+
+    price = float(df["close"].iloc[-1])
+    ma200 = float(df["close"].rolling(window=MA_PERIOD).mean().iloc[-1])
+
+    if price < ma200:
+        logger.info(f"Skipping {symbol}: price {price:.2f} below MA200 {ma200:.2f}")
+        return False
+
+    return True
+
 
 def try_buy(symbol):
     try:
         positions = api.get_all_positions()
-        if not any(p.symbol == symbol for p in positions):
-            buying_power = float(api.get_account().buying_power)
-            spend_amount = buying_power * MAX_CAPITAL_USAGE
-            if spend_amount >= MIN_ORDER_VALUE:
-                order_data = MarketOrderRequest(
-                    symbol=symbol,
-                    notional=round(spend_amount, 2),
-                    side=OrderSide.BUY,
-                    time_in_force=TimeInForce.DAY
-                )
-                api.submit_order(order_data=order_data)
-                logger.info(f"Bought ${spend_amount:.2f} of {symbol}")
+
+        if any(p.symbol == symbol for p in positions):
+            return
+
+        account = api.get_account()
+        buying_power = float(account.buying_power)
+
+        spend_amount = buying_power * MAX_CAPITAL_USAGE
+
+        if spend_amount < MIN_ORDER_VALUE:
+            return
+
+        order = MarketOrderRequest(
+            symbol=symbol,
+            notional=round(spend_amount, 2),
+            side=OrderSide.BUY,
+            time_in_force=TimeInForce.DAY
+        )
+
+        api.submit_order(order_data=order)
+        logger.info(f"Bought ${spend_amount:.2f} of {symbol}")
+
     except Exception as e:
         logger.error(f"Buy failed for {symbol}: {e}")
+
 
 def manage_positions():
     try:
         for p in api.get_all_positions():
+
             entry_price = float(p.avg_entry_price)
             current_price = float(p.current_price)
-            
-            # Take Profit
-            if current_price >= entry_price * (1 + TAKE_PROFIT_PCT):
+
+            pnl_up = entry_price * (1 + TAKE_PROFIT_PCT)
+            pnl_down = entry_price * (1 - STOP_LOSS_PCT)
+
+            # TAKE PROFIT
+            if current_price >= pnl_up:
                 api.close_position(p.symbol)
-                logger.info(f"Take profit hit for {p.symbol}")
-            
-            # Stop Loss
-            elif current_price <= entry_price * (1 - STOP_LOSS_PCT):
+                logger.info(f"Take profit hit: {p.symbol}")
+                continue
+
+            # STOP LOSS
+            if current_price <= pnl_down:
                 api.close_position(p.symbol)
-                logger.info(f"Stop loss hit for {p.symbol}")
-                
-            # Trailing Stop (Safe check for highwater_mark)
-            elif hasattr(p, "highwater_mark") and p.highwater_mark and current_price <= float(p.highwater_mark) * (1 - TRAILING_STOP_PCT):
-                api.close_position(p.symbol)
-                logger.info(f"Trailing stop hit for {p.symbol}")
-                
+                logger.info(f"Stop loss hit: {p.symbol}")
+                continue
+
     except Exception as e:
         logger.error(f"Position management failed: {e}")
 
+
 # MAIN LOOP
-logger.info("🚀 Sentinel v2.1 Online")
+logger.info("🚀 Sentinel v2.1 FIXED ONLINE")
+
 while True:
-    if api.get_clock().is_open and trading_enabled:
-        try:
+    try:
+        clock = api.get_clock()
+
+        if clock.is_open and trading_enabled:
             check_circuit_breaker()
+
             for sym in MY_SYMBOLS:
                 if market_trend_ok(sym):
                     try_buy(sym)
+
             manage_positions()
-        except Exception as e:
-            logger.error(f"Loop error: {e}")
+
+    except Exception as e:
+        logger.error(f"Main loop error: {e}")
+
     time.sleep(60)
