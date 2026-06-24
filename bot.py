@@ -241,11 +241,11 @@ def buy(symbol):
 
     logger.info(f"{symbol} SIGNAL: {signal}")
 
-    if signal == "BULLISH":
-    pass  # normal buy
+if signal == "BULLISH":
+    direction = "BUY"
 
 elif signal == "BEARISH":
-    pass  # allow dip entries (same buy engine for now)
+    direction = "BUY_DIP"
 
 else:
     return
