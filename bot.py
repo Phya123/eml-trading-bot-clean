@@ -186,8 +186,15 @@ def analyze(symbol):
     if vol / price < 0.0025:
         return price, f"{trend}_LOW_VOL_SKIP"
 
-    return price, trend
-    
+    trend = "BULLISH" if fast > slow else "BEARISH"
+    if trend == "BULLISH":
+    signal = "BULLISH"
+elif trend == "BEARISH":
+    signal = "BEARISH"
+else:
+    signal = "NO_TRADE"
+
+return price, signal
 
 
 # =========================
