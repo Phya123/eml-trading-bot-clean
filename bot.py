@@ -332,8 +332,9 @@ while True:
 
             manage_positions()
         else:
-            logger.info("Market not safe/open window")
-
+            logger.info(
+    f"Market Open={api.get_clock().is_open} | Trades Today={state['trade_count']}"
+            )
     except Exception as e:
         logger.error(f"loop error: {e}")
 
