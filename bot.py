@@ -1,6 +1,6 @@
-import os, time, logging, sys
+import os, time, logging, sys, csv
 import pandas as pd
-from datetime import date
+from datetime import date, datetime
 
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
@@ -14,7 +14,7 @@ from alpaca.data.timeframe import TimeFrame
 # =========================
 # CONFIG
 # =========================
-SYMBOLS = ["XLE", "SPCX", "QQQ", "SPY"]
+SYMBOLS = ["SPY", "QQQ", "IWM", "XLE"]
 
 TIMEFRAME = TimeFrame.Minute
 
@@ -34,6 +34,8 @@ DAILY_LOSS_LIMIT = 0.03
 MAX_TRADES_PER_DAY = 10
 
 ENABLE_TRADING = True
+
+TRADE_LOG_FILE = "trade_journal.csv"
 
 
 # =========================
@@ -71,12 +73,84 @@ state = {
 
 
 # =========================
+# DASHBOARD STATS
+# =========================
+trade_stats = {
+    "trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "pnl": 0.0
+}
+
+
+# =========================
 # EMERGENCY STOP
 # =========================
 def emergency_stop(reason):
     global ENABLE_TRADING
     ENABLE_TRADING = False
     logger.critical(f"🚨 EMERGENCY STOP: {reason}")
+
+
+# =========================
+# JOURNAL
+# =========================
+def log_trade(symbol, side, price, qty, pnl, reason):
+    file_exists = os.path.isfile(TRADE_LOG_FILE)
+
+    with open(TRADE_LOG_FILE, "a", newline="") as f:
+        writer = csv.writer(f)
+
+        if not file_exists:
+            writer.writerow(["time", "symbol", "side", "price", "qty", "pnl", "reason"])
+
+        writer.writerow([
+            datetime.utcnow(),
+            symbol,
+            side,
+            price,
+            qty,
+            pnl,
+            reason
+        ])
+
+
+# =========================
+# DASHBOARD
+# =========================
+def print_dashboard():
+    trades = trade_stats["trades"]
+    wins = trade_stats["wins"]
+    losses = trade_stats["losses"]
+    pnl = trade_stats["pnl"]
+
+    win_rate = (wins / trades * 100) if trades > 0 else 0
+
+    logger.info("===================================")
+    logger.info("📊 LIVE DASHBOARD")
+    logger.info(f"Trades: {trades}")
+    logger.info(f"Wins: {wins} | Losses: {losses}")
+    logger.info(f"Win Rate: {win_rate:.2f}%")
+    logger.info(f"PnL: {pnl:.4f}")
+    logger.info("===================================")
+
+
+def log_dashboard_to_journal():
+    file_exists = os.path.isfile("dashboard_log.csv")
+
+    with open("dashboard_log.csv", "a", newline="") as f:
+        writer = csv.writer(f)
+
+        if not file_exists:
+            writer.writerow(["time", "trades", "wins", "losses", "pnl"])
+
+        writer.writerow([
+            datetime.utcnow(),
+            trade_stats["trades"],
+            trade_stats["wins"],
+            trade_stats["losses"],
+            trade_stats["pnl"]
+        ])
 
 
 # =========================
@@ -109,7 +183,7 @@ def check_circuit_breaker():
 
 
 # =========================
-# DATA SAFETY
+# DATA
 # =========================
 def get_data(symbol):
     try:
@@ -127,7 +201,6 @@ def get_data(symbol):
 
         df = df.dropna()
 
-        # BAD DATA FILTER
         if df is None or len(df) < 10:
             return None
 
@@ -139,7 +212,7 @@ def get_data(symbol):
 
 
 # =========================
-# ATR (VOLATILITY FILTER)
+# ATR
 # =========================
 def atr(df, period=14):
     high = df["high"]
@@ -156,7 +229,7 @@ def atr(df, period=14):
 
 
 # =========================
-# STRATEGY
+# ANALYZE
 # =========================
 def analyze(symbol):
     logger.info(f"STARTING ANALYSIS FOR {symbol}")
@@ -187,7 +260,7 @@ def analyze(symbol):
 
 
 # =========================
-# SAFETY CHECKS
+# SAFETY
 # =========================
 def cooldown_ok(symbol):
     last = state["last_trade_time"].get(symbol)
@@ -199,7 +272,6 @@ def cooldown_ok(symbol):
 def market_open_safety():
     clock = api.get_clock()
 
-    # SKIP FIRST 30 MINUTES (VERY IMPORTANT)
     if clock.is_open:
         if clock.timestamp.hour == 9 and clock.timestamp.minute < 40:
             return False
@@ -207,16 +279,7 @@ def market_open_safety():
 
 
 # =========================
-# EXECUTION SAFETY
-# =========================
-def verify_order(symbol):
-    time.sleep(2)
-    positions = api.get_all_positions()
-    return any(p.symbol == symbol for p in positions)
-
-
-# =========================
-# BUY ENGINE
+# BUY
 # =========================
 def buy(symbol):
     global ENABLE_TRADING
@@ -238,13 +301,10 @@ def buy(symbol):
 
     logger.info(f"{symbol} SIGNAL: {signal}")
 
-# Ensure we only proceed if the signal is BULLISH
     if signal != "BULLISH":
         return
 
-    # If we reached here, the signal is BULLISH, continue to trade
     account = api.get_account()
-    
     spend = float(account.buying_power) * MAX_CAPITAL_USAGE
 
     if spend < 5:
@@ -260,10 +320,6 @@ def buy(symbol):
 
         api.submit_order(order_data=order)
 
-        if not verify_order(symbol):
-            logger.warning(f"{symbol} ORDER NOT CONFIRMED")
-            return
-
         state["last_trade_time"][symbol] = time.time()
         state["trade_count"] += 1
 
@@ -274,7 +330,7 @@ def buy(symbol):
 
 
 # =========================
-# POSITION MANAGEMENT
+# POSITIONS
 # =========================
 def manage_positions():
     try:
@@ -293,29 +349,20 @@ def manage_positions():
                 price
             )
 
-            high = state["position_high"][symbol]
-
             pnl_pct = (price - entry) / entry
 
             reason = None
 
             if pnl_pct >= TAKE_PROFIT_PCT:
                 reason = "TAKE_PROFIT"
-
             elif pnl_pct <= -STOP_LOSS_PCT:
                 reason = "STOP_LOSS"
-
-            elif price <= high * (1 - TRAILING_STOP_PCT):
+            elif price <= state["position_high"][symbol] * (1 - TRAILING_STOP_PCT):
                 reason = "TRAIL_STOP"
 
             if reason:
                 api.close_position(symbol)
-
-                # SAFE RESET (YOUR REQUIRED FIX)
-                state["position_high"].pop(symbol, None)
-                state["last_trade_time"].pop(symbol, None)
-
-                logger.info(f"{symbol} EXIT + STATE RESET ({reason})")
+                logger.info(f"{symbol} EXIT ({reason})")
 
     except Exception as e:
         logger.error(f"position error: {e}")
@@ -324,7 +371,7 @@ def manage_positions():
 # =========================
 # MAIN LOOP
 # =========================
-logger.info("🚀 SENTINEL v8 SAFE LIVE ENGINE STARTED")
+logger.info("🚀 SENTINEL LIVE ENGINE STARTED")
 
 while True:
     try:
@@ -332,19 +379,25 @@ while True:
         check_circuit_breaker()
 
         if market_open_safety():
-        for sym in SYMBOLS:
-    logger.info(f"LOOP START -> {sym}")
 
-    try:
-        buy(sym)
-    except Exception as e:
-        logger.error(f"{sym} FAILED HARD: {e}")
+            for sym in SYMBOLS:
+                logger.info(f"LOOP START -> {sym}")
+
+                try:
+                    buy(sym)
+                except Exception as e:
+                    logger.error(f"{sym} FAILED HARD: {e}")
 
             manage_positions()
+
+            print_dashboard()
+            log_dashboard_to_journal()
+
         else:
-            logger.info(
-    f"Market Open={api.get_clock().is_open} | Trades Today={state['trade_count']}"
-            )
+            clock = api.get_clock()
+            logger.info(f"Market Open={clock.is_open} | Trades Today={state['trade_count']}")
+            print_dashboard()
+
     except Exception as e:
         logger.error(f"loop error: {e}")
 
