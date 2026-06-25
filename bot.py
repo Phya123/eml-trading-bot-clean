@@ -332,7 +332,7 @@ while True:
         check_circuit_breaker()
 
         if market_open_safety():
-            for sym in SYMBOLS:
+        for sym in SYMBOLS:
     logger.info(f"LOOP START -> {sym}")
 
     try:
