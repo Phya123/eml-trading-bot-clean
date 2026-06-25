@@ -160,7 +160,7 @@ def atr(df, period=14):
 # =========================
 def analyze(symbol):
     def analyze(symbol):
-    logger.info(f"STARTING ANALYSIS FOR {symbol}")
+        logger.info(f"STARTING ANALYSIS FOR {symbol}")
 
     df = get_data(symbol)
         return None, "BAD_DATA"
