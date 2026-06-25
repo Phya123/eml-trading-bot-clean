@@ -128,7 +128,7 @@ def get_data(symbol):
         df = df.dropna()
 
         # BAD DATA FILTER
-        if df is None or len(df) < 60 or df["close"].isnull().any():
+        if df is None or len(df) < 10:
             return None
 
         return df
