@@ -1,4 +1,4 @@
-import os, time, logging, sys
+import os, time, logging, sys, csv
 import pandas as pd
 from datetime import date, datetime
 
@@ -14,7 +14,7 @@ from alpaca.data.timeframe import TimeFrame
 # =========================
 # CONFIG
 # =========================
-SYMBOLS = ["SPY", "QQQ", "IWM", "XLE"]
+SYMBOLS = ["SPY", "QQQ", "AAPL", "LMT", "XLE"]
 
 TIMEFRAME = TimeFrame.Minute
 
@@ -22,7 +22,6 @@ FAST_MA = 20
 SLOW_MA = 50
 ATR_PERIOD = 14
 
-MAX_RISK_PER_TRADE = 0.01
 MAX_CAPITAL_USAGE = 0.05
 
 STOP_LOSS_PCT = 0.02
@@ -34,6 +33,20 @@ DAILY_LOSS_LIMIT = 0.03
 MAX_TRADES_PER_DAY = 10
 
 ENABLE_TRADING = True
+
+TRADE_LOG_FILE = "trade_journal.csv"
+
+
+# =========================
+# STRATEGY MODES
+# =========================
+STRATEGY_MODE = {
+    "AAPL": "FAST",
+    "LMT": "SLOW",
+    "SPY": "DEFAULT",
+    "QQQ": "DEFAULT",
+    "XLE": "DEFAULT"
+}
 
 
 # =========================
@@ -66,7 +79,22 @@ state = {
     "last_trade_time": {},
     "position_high": {},
     "trade_count": 0,
-    "day": date.today()
+    "day": date.today(),
+    "vol_history": {}
+}
+
+for sym in SYMBOLS:
+    state["vol_history"][sym] = []
+
+
+# =========================
+# DASHBOARD
+# =========================
+trade_stats = {
+    "trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "pnl": 0.0
 }
 
 
@@ -80,7 +108,50 @@ def emergency_stop(reason):
 
 
 # =========================
-# DAILY RESET
+# JOURNAL
+# =========================
+def log_trade(symbol, side, price, qty, pnl, reason):
+    file_exists = os.path.isfile(TRADE_LOG_FILE)
+
+    with open(TRADE_LOG_FILE, "a", newline="") as f:
+        writer = csv.writer(f)
+
+        if not file_exists:
+            writer.writerow(["time", "symbol", "side", "price", "qty", "pnl", "reason"])
+
+        writer.writerow([
+            datetime.utcnow(),
+            symbol,
+            side,
+            price,
+            qty,
+            pnl,
+            reason
+        ])
+
+
+# =========================
+# DASHBOARD
+# =========================
+def print_dashboard():
+    trades = trade_stats["trades"]
+    wins = trade_stats["wins"]
+    losses = trade_stats["losses"]
+    pnl = trade_stats["pnl"]
+
+    win_rate = (wins / trades * 100) if trades > 0 else 0
+
+    logger.info("===================================")
+    logger.info("📊 LIVE DASHBOARD")
+    logger.info(f"Trades: {trades}")
+    logger.info(f"Wins: {wins} | Losses: {losses}")
+    logger.info(f"Win Rate: {win_rate:.2f}%")
+    logger.info(f"PnL: {pnl:.4f}")
+    logger.info("===================================")
+
+
+# =========================
+# RESET
 # =========================
 def reset_daily_state():
     if date.today() != state["day"]:
@@ -127,7 +198,7 @@ def get_data(symbol):
 
         df = df.dropna()
 
-        if len(df) < 60:
+        if df is None or len(df) < 10:
             return None
 
         return df
@@ -155,14 +226,29 @@ def atr(df, period=14):
 
 
 # =========================
-# ANALYZE (FIXED SAFETY)
+# STRATEGY HELPERS
+# =========================
+def get_threshold(symbol):
+    mode = STRATEGY_MODE.get(symbol, "DEFAULT")
+
+    if mode == "FAST":
+        return 0.0007
+
+    if mode == "SLOW":
+        return 0.0013
+
+    return 0.0010
+
+
+# =========================
+# ANALYZE
 # =========================
 def analyze(symbol):
     logger.info(f"STARTING ANALYSIS FOR {symbol}")
 
     df = get_data(symbol)
 
-    if df is None:
+    if df is None or len(df) < 60:
         return 0.0, "BAD_DATA"
 
     price = float(df["close"].iloc[-1])
@@ -171,15 +257,33 @@ def analyze(symbol):
     slow = df["close"].rolling(SLOW_MA).mean().iloc[-1]
     vol = atr(df, ATR_PERIOD)
 
+    current_vol_ratio = vol / price
+
+    state["vol_history"][symbol].append(current_vol_ratio)
+    if len(state["vol_history"][symbol]) > 20:
+        state["vol_history"][symbol].pop(0)
+
+    if len(state["vol_history"][symbol]) >= 5:
+        avg_vol_ratio = sum(state["vol_history"][symbol]) / len(state["vol_history"][symbol])
+        dynamic_threshold = avg_vol_ratio * 0.85
+    else:
+        avg_vol_ratio = 0
+        dynamic_threshold = get_threshold(symbol)
+
+    final_threshold = max(get_threshold(symbol), dynamic_threshold)
+
     if pd.isna(fast) or pd.isna(slow) or pd.isna(vol):
         return price, "NO_SIGNAL"
 
     trend = "BULLISH" if fast > slow else "BEARISH"
 
-    logger.info(f"{symbol} TREND={trend} FastMA={fast:.2f} SlowMA={slow:.2f}")
-    logger.info(f"{symbol} Price={price:.2f} ATR={vol:.4f} VolRatio={(vol/price):.4f}")
+    logger.info(
+        f"{symbol} TREND={trend} | "
+        f"VolRatio={current_vol_ratio:.4f} | "
+        f"AvgRatio={avg_vol_ratio:.4f}"
+    )
 
-    if vol / price < 0.0010:
+    if current_vol_ratio < final_threshold:
         return price, f"{trend}_LOW_VOL_SKIP"
 
     return price, trend
@@ -205,12 +309,9 @@ def market_open_safety():
 
 
 # =========================
-# BUY ENGINE (SAFE)
+# BUY ENGINE
 # =========================
 def buy(symbol):
-
-    logger.info(f"ENTERED BUY FUNCTION FOR {symbol}")
-
     global ENABLE_TRADING
 
     if not ENABLE_TRADING:
@@ -222,7 +323,8 @@ def buy(symbol):
     if not cooldown_ok(symbol):
         return
 
-    if any(p.symbol == symbol for p in api.get_all_positions()):
+    positions = api.get_all_positions()
+    if any(p.symbol == symbol for p in positions):
         return
 
     price, signal = analyze(symbol)
@@ -258,21 +360,25 @@ def buy(symbol):
 
 
 # =========================
-# POSITION MANAGEMENT
+# POSITIONS
 # =========================
 def manage_positions():
     try:
-        for p in api.get_all_positions():
+        positions = api.get_all_positions()
+
+        for p in positions:
             symbol = p.symbol
             entry = float(p.avg_entry_price)
             price = float(p.current_price)
 
+            if symbol not in state["position_high"]:
+                state["position_high"][symbol] = price
+
             state["position_high"][symbol] = max(
-                state["position_high"].get(symbol, price),
+                state["position_high"][symbol],
                 price
             )
 
-            high = state["position_high"][symbol]
             pnl_pct = (price - entry) / entry
 
             reason = None
@@ -281,14 +387,11 @@ def manage_positions():
                 reason = "TAKE_PROFIT"
             elif pnl_pct <= -STOP_LOSS_PCT:
                 reason = "STOP_LOSS"
-            elif price <= high * (1 - TRAILING_STOP_PCT):
+            elif price <= state["position_high"][symbol] * (1 - TRAILING_STOP_PCT):
                 reason = "TRAIL_STOP"
 
             if reason:
                 api.close_position(symbol)
-                state["position_high"].pop(symbol, None)
-                state["last_trade_time"].pop(symbol, None)
-
                 logger.info(f"{symbol} EXIT ({reason})")
 
     except Exception as e:
@@ -312,11 +415,12 @@ while True:
                 buy(sym)
 
             manage_positions()
+            print_dashboard()
 
         else:
-            logger.info(
-                f"Market Open={api.get_clock().is_open} | Trades Today={state['trade_count']}"
-            )
+            clock = api.get_clock()
+            logger.info(f"Market Open={clock.is_open} | Trades Today={state['trade_count']}")
+            print_dashboard()
 
     except Exception as e:
         logger.error(f"loop error: {e}")
