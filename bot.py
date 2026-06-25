@@ -88,7 +88,7 @@ for sym in SYMBOLS:
 
 
 # =========================
-# DASHBOARD STATE
+# DASHBOARD
 # =========================
 trade_stats = {
     "trades": 0,
@@ -151,6 +151,35 @@ def print_dashboard():
 
 
 # =========================
+# RESET
+# =========================
+def reset_daily_state():
+    if date.today() != state["day"]:
+        state["day"] = date.today()
+        state["trade_count"] = 0
+        logger.info("🔄 Daily reset completed")
+
+
+# =========================
+# CIRCUIT BREAKER
+# =========================
+def check_circuit_breaker():
+    try:
+        acc = api.get_account()
+
+        if state["start_equity"] is None:
+            state["start_equity"] = float(acc.equity)
+
+        equity = float(acc.equity)
+
+        if equity < state["start_equity"] * (1 - DAILY_LOSS_LIMIT):
+            emergency_stop("Daily loss limit hit")
+
+    except Exception as e:
+        logger.error(f"Risk error: {e}")
+
+
+# =========================
 # DATA
 # =========================
 def get_data(symbol):
@@ -197,7 +226,7 @@ def atr(df, period=14):
 
 
 # =========================
-# THRESHOLD
+# STRATEGY HELPERS
 # =========================
 def get_threshold(symbol):
     mode = STRATEGY_MODE.get(symbol, "DEFAULT")
@@ -206,11 +235,12 @@ def get_threshold(symbol):
         return 0.0007
     if mode == "SLOW":
         return 0.0013
+
     return 0.0010
 
 
 # =========================
-# ANALYZE (FIXED + MORE TRADABLE)
+# ANALYZE
 # =========================
 def analyze(symbol):
     logger.info(f"STARTING ANALYSIS FOR {symbol}")
@@ -226,41 +256,76 @@ def analyze(symbol):
     slow = df["close"].rolling(SLOW_MA).mean().iloc[-1]
     vol = atr(df, ATR_PERIOD)
 
-    if pd.isna(fast) or pd.isna(slow) or pd.isna(vol):
-        return price, "NO_SIGNAL"
-
-    trend = "BULLISH" if fast > slow else "BEARISH"
-
     current_vol_ratio = vol / price
 
     state["vol_history"][symbol].append(current_vol_ratio)
     if len(state["vol_history"][symbol]) > 20:
         state["vol_history"][symbol].pop(0)
 
-    avg = sum(state["vol_history"][symbol]) / len(state["vol_history"][symbol])
-    dynamic_threshold = max(get_threshold(symbol), avg * 0.85)
+    if len(state["vol_history"][symbol]) >= 5:
+        avg_vol_ratio = sum(state["vol_history"][symbol]) / len(state["vol_history"][symbol])
+        dynamic_threshold = avg_vol_ratio * 0.85
+    else:
+        avg_vol_ratio = 0
+        dynamic_threshold = get_threshold(symbol)
+
+    final_threshold = max(get_threshold(symbol), dynamic_threshold)
+
+    if pd.isna(fast) or pd.isna(slow) or pd.isna(vol):
+        return price, "NO_SIGNAL"
+
+    trend = "BULLISH" if fast > slow else "BEARISH"
 
     logger.info(
-        f"{symbol} TREND={trend} VolRatio={current_vol_ratio:.4f} TH={dynamic_threshold:.4f}"
+        f"{symbol} TREND={trend} | VolRatio={current_vol_ratio:.4f} | AvgRatio={avg_vol_ratio:.4f}"
     )
 
-    # FIX: allow some LOW VOL trades instead of blocking everything
-    if current_vol_ratio < dynamic_threshold:
+    if current_vol_ratio < final_threshold:
         return price, f"{trend}_LOW_VOL_SKIP"
 
     return price, trend
 
 
 # =========================
-# BUY ENGINE (FIXED TRADING LOGIC)
+# SAFETY
+# =========================
+def cooldown_ok(symbol):
+    last = state["last_trade_time"].get(symbol)
+    if not last:
+        return True
+    return (time.time() - last) > COOLDOWN_SECONDS
+
+
+def market_open_safety():
+    try:
+        clock = api.get_clock()
+        return clock.is_open
+    except:
+        return False
+
+
+# =========================
+# BUY ENGINE
 # =========================
 def buy(symbol):
     global ENABLE_TRADING
+
+    # 🔴 HARD MARKET LOCK (NEW FIX)
+    try:
+        clock = api.get_clock()
+        if not clock.is_open:
+            logger.info(f"SKIP {symbol} - MARKET CLOSED")
+            return
+    except:
+        return
 
     if not ENABLE_TRADING:
         return
 
     if state["trade_count"] >= MAX_TRADES_PER_DAY:
+        return
+
+    if not cooldown_ok(symbol):
         return
 
     positions = api.get_all_positions()
@@ -271,15 +336,11 @@ def buy(symbol):
 
     logger.info(f"{symbol} SIGNAL: {signal}")
 
-    # FIXED TRADE RULES (this is what was blocking you before)
-    if signal not in ["BULLISH", "BULLISH_LOW_VOL_SKIP"]:
+    if signal != "BULLISH":
         return
 
     account = api.get_account()
     spend = float(account.buying_power) * MAX_CAPITAL_USAGE
-
-    if signal == "BULLISH_LOW_VOL_SKIP":
-        spend *= 0.6  # reduced conviction sizing
 
     if spend < 5:
         return
@@ -292,21 +353,19 @@ def buy(symbol):
             time_in_force=TimeInForce.DAY
         )
 
-        api.submit_order(order)
+        api.submit_order(order_data=order)
 
         state["last_trade_time"][symbol] = time.time()
         state["trade_count"] += 1
 
-        trade_stats["trades"] += 1
-
-        logger.info(f"BUY SENT {symbol} ${spend:.2f}")
+        logger.info(f"BUY CONFIRMED {symbol} ${spend:.2f}")
 
     except Exception as e:
         logger.error(f"{symbol} buy error: {e}")
 
 
 # =========================
-# POSITION MANAGEMENT
+# POSITIONS
 # =========================
 def manage_positions():
     try:
@@ -340,15 +399,6 @@ def manage_positions():
                 api.close_position(symbol)
                 logger.info(f"{symbol} EXIT ({reason})")
 
-                trade_stats["pnl"] += pnl_pct
-
-                if pnl_pct > 0:
-                    trade_stats["wins"] += 1
-                else:
-                    trade_stats["losses"] += 1
-
-                log_trade(symbol, "SELL", price, 1, pnl_pct, reason)
-
     except Exception as e:
         logger.error(f"position error: {e}")
 
@@ -360,11 +410,22 @@ logger.info("🚀 SENTINEL LIVE ENGINE STARTED")
 
 while True:
     try:
-        for sym in SYMBOLS:
-            buy(sym)
+        reset_daily_state()
+        check_circuit_breaker()
 
-        manage_positions()
-        print_dashboard()
+        if market_open_safety():
+
+            for sym in SYMBOLS:
+                logger.info(f"LOOP START -> {sym}")
+                buy(sym)
+
+            manage_positions()
+            print_dashboard()
+
+        else:
+            clock = api.get_clock()
+            logger.info(f"Market Open={clock.is_open} | Trades Today={state['trade_count']}")
+            print_dashboard()
 
     except Exception as e:
         logger.error(f"loop error: {e}")
