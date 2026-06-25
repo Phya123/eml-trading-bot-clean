@@ -159,9 +159,10 @@ def atr(df, period=14):
 # STRATEGY
 # =========================
 def analyze(symbol):
-    df = get_data(symbol)
+    def analyze(symbol):
+    logger.info(f"STARTING ANALYSIS FOR {symbol}")
 
-    if df is None:
+    df = get_data(symbol)
         return None, "BAD_DATA"
 
     price = float(df["close"].iloc[-1])
@@ -183,7 +184,7 @@ def analyze(symbol):
         f"{symbol} Price={price:.2f} ATR={vol:.4f} VolRatio={(vol/price):.4f}"
     )
 
-    if vol / price < 0.0025:
+if vol / price < 0.0010:
         return price, f"{trend}_LOW_VOL_SKIP"
 
     return price, trend
