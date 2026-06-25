@@ -333,7 +333,12 @@ while True:
 
         if market_open_safety():
             for sym in SYMBOLS:
-                buy(sym)
+    logger.info(f"LOOP START -> {sym}")
+
+    try:
+        buy(sym)
+    except Exception as e:
+        logger.error(f"{sym} FAILED HARD: {e}")
 
             manage_positions()
         else:
