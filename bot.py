@@ -1,4 +1,4 @@
-import os, time, logging, sys, csv
+import os, time, logging, sys
 import pandas as pd
 from datetime import date, datetime
 
@@ -34,8 +34,6 @@ DAILY_LOSS_LIMIT = 0.03
 MAX_TRADES_PER_DAY = 10
 
 ENABLE_TRADING = True
-
-TRADE_LOG_FILE = "trade_journal.csv"
 
 
 # =========================
@@ -73,84 +71,12 @@ state = {
 
 
 # =========================
-# DASHBOARD STATS
-# =========================
-trade_stats = {
-    "trades": 0,
-    "wins": 0,
-    "losses": 0,
-    "pnl": 0.0
-}
-
-
-# =========================
 # EMERGENCY STOP
 # =========================
 def emergency_stop(reason):
     global ENABLE_TRADING
     ENABLE_TRADING = False
     logger.critical(f"🚨 EMERGENCY STOP: {reason}")
-
-
-# =========================
-# JOURNAL
-# =========================
-def log_trade(symbol, side, price, qty, pnl, reason):
-    file_exists = os.path.isfile(TRADE_LOG_FILE)
-
-    with open(TRADE_LOG_FILE, "a", newline="") as f:
-        writer = csv.writer(f)
-
-        if not file_exists:
-            writer.writerow(["time", "symbol", "side", "price", "qty", "pnl", "reason"])
-
-        writer.writerow([
-            datetime.utcnow(),
-            symbol,
-            side,
-            price,
-            qty,
-            pnl,
-            reason
-        ])
-
-
-# =========================
-# DASHBOARD
-# =========================
-def print_dashboard():
-    trades = trade_stats["trades"]
-    wins = trade_stats["wins"]
-    losses = trade_stats["losses"]
-    pnl = trade_stats["pnl"]
-
-    win_rate = (wins / trades * 100) if trades > 0 else 0
-
-    logger.info("===================================")
-    logger.info("📊 LIVE DASHBOARD")
-    logger.info(f"Trades: {trades}")
-    logger.info(f"Wins: {wins} | Losses: {losses}")
-    logger.info(f"Win Rate: {win_rate:.2f}%")
-    logger.info(f"PnL: {pnl:.4f}")
-    logger.info("===================================")
-
-
-def log_dashboard_to_journal():
-    file_exists = os.path.isfile("dashboard_log.csv")
-
-    with open("dashboard_log.csv", "a", newline="") as f:
-        writer = csv.writer(f)
-
-        if not file_exists:
-            writer.writerow(["time", "trades", "wins", "losses", "pnl"])
-
-        writer.writerow([
-            datetime.utcnow(),
-            trade_stats["trades"],
-            trade_stats["wins"],
-            trade_stats["losses"],
-            trade_stats["pnl"]
-        ])
 
 
 # =========================
@@ -201,7 +127,7 @@ def get_data(symbol):
 
         df = df.dropna()
 
-        if df is None or len(df) < 10:
+        if len(df) < 60:
             return None
 
         return df
@@ -229,14 +155,14 @@ def atr(df, period=14):
 
 
 # =========================
-# ANALYZE
+# ANALYZE (FIXED SAFETY)
 # =========================
 def analyze(symbol):
     logger.info(f"STARTING ANALYSIS FOR {symbol}")
 
     df = get_data(symbol)
 
-    if df is None or len(df) < 60:
+    if df is None:
         return 0.0, "BAD_DATA"
 
     price = float(df["close"].iloc[-1])
@@ -279,9 +205,12 @@ def market_open_safety():
 
 
 # =========================
-# BUY
+# BUY ENGINE (SAFE)
 # =========================
 def buy(symbol):
+
+    logger.info(f"ENTERED BUY FUNCTION FOR {symbol}")
+
     global ENABLE_TRADING
 
     if not ENABLE_TRADING:
@@ -293,8 +222,7 @@ def buy(symbol):
     if not cooldown_ok(symbol):
         return
 
-    positions = api.get_all_positions()
-    if any(p.symbol == symbol for p in positions):
+    if any(p.symbol == symbol for p in api.get_all_positions()):
         return
 
     price, signal = analyze(symbol)
@@ -330,25 +258,21 @@ def buy(symbol):
 
 
 # =========================
-# POSITIONS
+# POSITION MANAGEMENT
 # =========================
 def manage_positions():
     try:
-        positions = api.get_all_positions()
-
-        for p in positions:
+        for p in api.get_all_positions():
             symbol = p.symbol
             entry = float(p.avg_entry_price)
             price = float(p.current_price)
 
-            if symbol not in state["position_high"]:
-                state["position_high"][symbol] = price
-
             state["position_high"][symbol] = max(
-                state["position_high"][symbol],
+                state["position_high"].get(symbol, price),
                 price
             )
 
+            high = state["position_high"][symbol]
             pnl_pct = (price - entry) / entry
 
             reason = None
@@ -357,11 +281,14 @@ def manage_positions():
                 reason = "TAKE_PROFIT"
             elif pnl_pct <= -STOP_LOSS_PCT:
                 reason = "STOP_LOSS"
-            elif price <= state["position_high"][symbol] * (1 - TRAILING_STOP_PCT):
+            elif price <= high * (1 - TRAILING_STOP_PCT):
                 reason = "TRAIL_STOP"
 
             if reason:
                 api.close_position(symbol)
+                state["position_high"].pop(symbol, None)
+                state["last_trade_time"].pop(symbol, None)
+
                 logger.info(f"{symbol} EXIT ({reason})")
 
     except Exception as e:
@@ -382,21 +309,14 @@ while True:
 
             for sym in SYMBOLS:
                 logger.info(f"LOOP START -> {sym}")
-
-                try:
-                    buy(sym)
-                except Exception as e:
-                    logger.error(f"{sym} FAILED HARD: {e}")
+                buy(sym)
 
             manage_positions()
 
-            print_dashboard()
-            log_dashboard_to_journal()
-
         else:
-            clock = api.get_clock()
-            logger.info(f"Market Open={clock.is_open} | Trades Today={state['trade_count']}")
-            print_dashboard()
+            logger.info(
+                f"Market Open={api.get_clock().is_open} | Trades Today={state['trade_count']}"
+            )
 
     except Exception as e:
         logger.error(f"loop error: {e}")
