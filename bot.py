@@ -159,13 +159,12 @@ def atr(df, period=14):
 # STRATEGY
 # =========================
 def analyze(symbol):
-   def analyze(symbol):
     logger.info(f"STARTING ANALYSIS FOR {symbol}")
 
     df = get_data(symbol)
 
-    if df is None:
-        return None, "BAD_DATA"
+    if df is None or len(df) < 60:
+        return 0.0, "BAD_DATA"
 
     price = float(df["close"].iloc[-1])
 
@@ -178,13 +177,8 @@ def analyze(symbol):
 
     trend = "BULLISH" if fast > slow else "BEARISH"
 
-    logger.info(
-        f"{symbol} TREND={trend} FastMA={fast:.2f} SlowMA={slow:.2f}"
-    )
-
-    logger.info(
-        f"{symbol} Price={price:.2f} ATR={vol:.4f} VolRatio={(vol/price):.4f}"
-    )
+    logger.info(f"{symbol} TREND={trend} FastMA={fast:.2f} SlowMA={slow:.2f}")
+    logger.info(f"{symbol} Price={price:.2f} ATR={vol:.4f} VolRatio={(vol/price):.4f}")
 
     if vol / price < 0.0025:
         return price, f"{trend}_LOW_VOL_SKIP"
