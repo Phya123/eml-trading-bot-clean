@@ -122,7 +122,7 @@ def get_data(symbol):
         bars = data_api.get_stock_bars(req)
 
         if bars is None or bars.df is None or len(bars.df) == 0:
-            logger.info(f"{symbol} BAD_DATA")
+            logger.warning(f"{symbol} BAD_DATA: empty bars response")
             return None
 
         df = bars.df
@@ -130,31 +130,32 @@ def get_data(symbol):
         if isinstance(df.index, pd.MultiIndex):
             try:
                 df = df.xs(symbol)
-            except:
-                logger.info(f"{symbol} BAD_DATA")
+            except Exception:
+                logger.warning(f"{symbol} BAD_DATA: cannot extract symbol from MultiIndex")
                 return None
 
         df = df.dropna()
 
-        if len(df) < 60:
-            logger.info(f"{symbol} BAD_DATA")
+        if df is None or len(df) < 60:
+            logger.warning(f"{symbol} BAD_DATA: insufficient rows {len(df) if df is not None else 0}")
             return None
 
         return df
 
     except Exception as e:
-        logger.info(f"{symbol} data error: {e}")
+        logger.error(f"{symbol} data error: {e}")
         return None
 
 
 # =========================
-# BUY ENGINE
+# BUY ENGINE (PATCHED ONLY)
 # =========================
 def buy(symbol):
     global ENABLE_TRADING
 
     try:
-        if not api.get_clock().is_open:
+        clock = api.get_clock()
+        if not clock.is_open:
             logger.info(f"SKIP {symbol} - MARKET CLOSED")
             return
     except:
@@ -180,7 +181,7 @@ def buy(symbol):
 
     trend = "BULLISH" if fast > slow else "BEARISH"
 
-    logger.info(f"{symbol} SIGNAL: {trend}")
+    logger.info(f"{symbol} SIGNAL RAW -> {trend}")
 
     if trend != "BULLISH":
         return
@@ -199,20 +200,31 @@ def buy(symbol):
             time_in_force=TimeInForce.DAY
         )
 
-        api.submit_order(order_data=order)
+        # 🔥 SUBMIT ORDER
+        response = api.submit_order(order_data=order)
 
+        # 🔥 FIX: LOG EVERYTHING (THIS WAS YOUR MAIN ISSUE)
+        logger.info(f"""
+========================
+ORDER PLACED
+Symbol: {symbol}
+Order ID: {response.id}
+Status: {response.status}
+Notional: {spend}
+Trend: {trend}
+========================
+""")
+
+        state["last_order_id"][symbol] = response.id
         state["last_trade_time"][symbol] = time.time()
         state["trade_count"] += 1
 
-        # ✅ CLEAN LOG FORMAT RESTORED
-        logger.info(f"BUY CONFIRMED {symbol} ${spend:.2f}")
-
     except Exception as e:
-        logger.info(f"{symbol} buy error: {e}")
+        logger.error(f"{symbol} buy error: {e}")
 
 
 # =========================
-# POSITION MANAGEMENT
+# POSITION MANAGEMENT (UNCHANGED)
 # =========================
 def manage_positions():
     try:
@@ -247,13 +259,13 @@ def manage_positions():
                 logger.info(f"{symbol} EXIT ({reason})")
 
     except Exception as e:
-        logger.info(f"position error: {e}")
+        logger.error(f"position error: {e}")
 
 
 # =========================
 # MAIN LOOP
 # =========================
-logger.info("SENTINEL LIVE ENGINE STARTED")
+logger.info("🚀 SENTINEL LIVE ENGINE STARTED")
 
 while True:
     try:
@@ -268,6 +280,6 @@ while True:
             logger.info("Market closed")
 
     except Exception as e:
-        logger.info(f"loop error: {e}")
+        logger.error(f"loop error: {e}")
 
-    time.sleep(60)
+    time.sleep(60) look at my code does it fix the issue that my bot bought xle and lmt but my logs don't show 
