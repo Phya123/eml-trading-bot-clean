@@ -80,7 +80,8 @@ state = {
     "position_high": {},
     "trade_count": 0,
     "day": date.today(),
-    "vol_history": {}
+    "vol_history": {},
+    "skip_reasons": {s: {} for s in SYMBOLS}
 }
 
 for sym in SYMBOLS:
@@ -88,10 +89,43 @@ for sym in SYMBOLS:
 
 
 # =========================
-# LOG HELPERS
+# DASHBOARD
 # =========================
-def log(symbol, msg):
-    logger.info(f"{symbol} {msg}")
+trade_stats = {
+    "trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "pnl": 0.0
+}
+
+
+# =========================
+# EMERGENCY STOP
+# =========================
+def emergency_stop(reason):
+    global ENABLE_TRADING
+    ENABLE_TRADING = False
+    logger.critical(f"🚨 EMERGENCY STOP: {reason}")
+
+
+# =========================
+# DASHBOARD OUTPUT
+# =========================
+def print_dashboard():
+    trades = trade_stats["trades"]
+    wins = trade_stats["wins"]
+    losses = trade_stats["losses"]
+    pnl = trade_stats["pnl"]
+
+    win_rate = (wins / trades * 100) if trades > 0 else 0
+
+    logger.info("===================================")
+    logger.info("📊 LIVE DASHBOARD")
+    logger.info(f"Trades: {trades}")
+    logger.info(f"Wins: {wins} | Losses: {losses}")
+    logger.info(f"Win Rate: {win_rate:.2f}%")
+    logger.info(f"PnL: {pnl:.4f}")
+    logger.info("===================================")
 
 
 # =========================
@@ -106,91 +140,59 @@ def get_data(symbol):
         )
 
         bars = data_api.get_stock_bars(req)
-
-        if bars is None or bars.df is None or len(bars.df) == 0:
-            log(symbol, "BAD_DATA")
-            return None
-
         df = bars.df
 
+        if df is None or len(df) == 0:
+            return None
+
         if isinstance(df.index, pd.MultiIndex):
-            try:
-                df = df.xs(symbol)
-            except:
-                log(symbol, "BAD_DATA")
-                return None
+            df = df.xs(symbol)
 
         df = df.dropna()
 
         if len(df) < 60:
-            log(symbol, "BAD_DATA")
             return None
 
         return df
 
-    except Exception as e:
-        log(symbol, f"data error: {e}")
+    except Exception:
         return None
 
 
 # =========================
-# ATR
-# =========================
-def atr(df, period=14):
-    high = df["high"]
-    low = df["low"]
-    close = df["close"]
-
-    tr = pd.concat([
-        high - low,
-        (high - close.shift()).abs(),
-        (low - close.shift()).abs()
-    ], axis=1).max(axis=1)
-
-    return tr.rolling(period).mean().iloc[-1]
-
-
-# =========================
-# ANALYZE (FIXED VISIBILITY)
+# ANALYZE (WITH REASON TRACKING)
 # =========================
 def analyze(symbol):
-    log(symbol, "STARTING ANALYSIS")
+    logger.info(f"STARTING ANALYSIS FOR {symbol}")
 
     df = get_data(symbol)
     if df is None:
-        return 0.0, "BAD_DATA"
+        return 0.0, "BAD_DATA", "BAD_DATA"
 
     price = float(df["close"].iloc[-1])
 
     fast = df["close"].rolling(FAST_MA).mean().iloc[-1]
     slow = df["close"].rolling(SLOW_MA).mean().iloc[-1]
-    vol = atr(df, ATR_PERIOD)
+    vol = (df["high"] - df["low"]).rolling(ATR_PERIOD).mean().iloc[-1]
+
+    if pd.isna(fast) or pd.isna(slow) or pd.isna(vol):
+        return price, "NO_SIGNAL", "INDICATOR_NA"
 
     trend = "BULLISH" if fast > slow else "BEARISH"
 
-    log(symbol, f"TREND={trend}")
-
-    # 🔥 FIX: LESS AGGRESSIVE FILTER (was blocking all trades)
-    if pd.isna(fast) or pd.isna(slow) or pd.isna(vol):
-        return price, "NO_SIGNAL"
-
-    # relaxed volatility filter
     current_vol_ratio = vol / price
-
     state["vol_history"][symbol].append(current_vol_ratio)
+
     if len(state["vol_history"][symbol]) > 20:
         state["vol_history"][symbol].pop(0)
 
     avg = sum(state["vol_history"][symbol]) / len(state["vol_history"][symbol])
-
-    # FIX: no hard max() blocking everything
     threshold = avg * 0.75 if avg > 0 else 0.0010
 
     if current_vol_ratio < threshold:
-        log(symbol, f"LOW_VOL_SKIP ({current_vol_ratio:.5f})")
-        return price, f"{trend}_LOW_VOL_SKIP"
+        return price, f"{trend}_LOW_VOL_SKIP", "LOW_VOL"
 
-    return price, trend
+    return price, trend, "OK"
 
 
 # =========================
@@ -200,30 +202,34 @@ def buy(symbol):
 
     try:
         if not api.get_clock().is_open:
-            log(symbol, "SKIP MARKET CLOSED")
-            return
+            logger.info(f"SKIP {symbol} MARKET_CLOSED")
+            return "MARKET_CLOSED"
+
     except:
-        return
+        return "MARKET_ERROR"
 
     if state["trade_count"] >= MAX_TRADES_PER_DAY:
-        return
+        logger.info(f"{symbol} SKIP MAX_TRADES")
+        return "MAX_TRADES"
 
     positions = api.get_all_positions()
     if any(p.symbol == symbol for p in positions):
-        return
+        logger.info(f"{symbol} SKIP POSITION_EXISTS")
+        return "POSITION_EXISTS"
 
-    price, signal = analyze(symbol)
+    price, signal, reason = analyze(symbol)
 
-    log(symbol, f"SIGNAL: {signal}")
+    logger.info(f"{symbol} SIGNAL: {signal}")
 
     if signal != "BULLISH":
-        return
+        logger.info(f"{symbol} NOT TRADED ({reason})")
+        return reason
 
     account = api.get_account()
     spend = float(account.buying_power) * MAX_CAPITAL_USAGE
 
     if spend < 5:
-        return
+        return "INSUFFICIENT_FUNDS"
 
     try:
         order = MarketOrderRequest(
@@ -238,11 +244,15 @@ def buy(symbol):
         state["trade_count"] += 1
         state["last_trade_time"][symbol] = time.time()
 
-        # CLEAN OUTPUT (your requested format)
+        trade_stats["trades"] += 1
+
         logger.info(f"BUY CONFIRMED {symbol} ${spend:.2f}")
 
+        return "TRADED"
+
     except Exception as e:
-        log(symbol, f"buy error: {e}")
+        logger.info(f"{symbol} BUY ERROR {e}")
+        return "ERROR"
 
 
 # =========================
@@ -268,10 +278,10 @@ def manage_positions():
 
             if reason:
                 api.close_position(symbol)
-                log(symbol, f"EXIT {reason}")
+                logger.info(f"{symbol} EXIT {reason}")
 
     except Exception as e:
-        logger.info(f"position error: {e}")
+        logger.info(f"POSITION ERROR {e}")
 
 
 # =========================
@@ -282,12 +292,13 @@ logger.info("SENTINEL LIVE ENGINE STARTED")
 while True:
     try:
         for sym in SYMBOLS:
-            log(sym, "LOOP START")
+            logger.info(f"LOOP START -> {sym}")
             buy(sym)
 
         manage_positions()
+        print_dashboard()
 
     except Exception as e:
-        logger.info(f"loop error: {e}")
+        logger.info(f"LOOP ERROR {e}")
 
     time.sleep(60)
