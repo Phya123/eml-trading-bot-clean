@@ -80,8 +80,7 @@ state = {
     "position_high": {},
     "trade_count": 0,
     "day": date.today(),
-    "vol_history": {},
-    "last_order_id": {}
+    "vol_history": {}
 }
 
 for sym in SYMBOLS:
@@ -109,6 +108,78 @@ def emergency_stop(reason):
 
 
 # =========================
+# JOURNAL
+# =========================
+def log_trade(symbol, side, price, qty, pnl, reason):
+    file_exists = os.path.isfile(TRADE_LOG_FILE)
+
+    with open(TRADE_LOG_FILE, "a", newline="") as f:
+        writer = csv.writer(f)
+
+        if not file_exists:
+            writer.writerow(["time", "symbol", "side", "price", "qty", "pnl", "reason"])
+
+        writer.writerow([
+            datetime.utcnow(),
+            symbol,
+            side,
+            price,
+            qty,
+            pnl,
+            reason
+        ])
+
+
+# =========================
+# DASHBOARD
+# =========================
+def print_dashboard():
+    trades = trade_stats["trades"]
+    wins = trade_stats["wins"]
+    losses = trade_stats["losses"]
+    pnl = trade_stats["pnl"]
+
+    win_rate = (wins / trades * 100) if trades > 0 else 0
+
+    logger.info("===================================")
+    logger.info("📊 LIVE DASHBOARD")
+    logger.info(f"Trades: {trades}")
+    logger.info(f"Wins: {wins} | Losses: {losses}")
+    logger.info(f"Win Rate: {win_rate:.2f}%")
+    logger.info(f"PnL: {pnl:.4f}")
+    logger.info("===================================")
+
+
+# =========================
+# RESET
+# =========================
+def reset_daily_state():
+    if date.today() != state["day"]:
+        state["day"] = date.today()
+        state["trade_count"] = 0
+        logger.info("🔄 Daily reset completed")
+
+
+# =========================
+# CIRCUIT BREAKER
+# =========================
+def check_circuit_breaker():
+    try:
+        acc = api.get_account()
+
+        if state["start_equity"] is None:
+            state["start_equity"] = float(acc.equity)
+
+        equity = float(acc.equity)
+
+        if equity < state["start_equity"] * (1 - DAILY_LOSS_LIMIT):
+            emergency_stop("Daily loss limit hit")
+
+    except Exception as e:
+        logger.error(f"Risk error: {e}")
+
+
+# =========================
 # DATA
 # =========================
 def get_data(symbol):
@@ -120,24 +191,14 @@ def get_data(symbol):
         )
 
         bars = data_api.get_stock_bars(req)
-
-        if bars is None or bars.df is None or len(bars.df) == 0:
-            logger.warning(f"{symbol} BAD_DATA: empty bars response")
-            return None
-
         df = bars.df
 
         if isinstance(df.index, pd.MultiIndex):
-            try:
-                df = df.xs(symbol)
-            except Exception:
-                logger.warning(f"{symbol} BAD_DATA: cannot extract symbol from MultiIndex")
-                return None
+            df = df.xs(symbol)
 
         df = df.dropna()
 
-        if df is None or len(df) < 60:
-            logger.warning(f"{symbol} BAD_DATA: insufficient rows {len(df) if df is not None else 0}")
+        if df is None or len(df) < 10:
             return None
 
         return df
@@ -148,11 +209,108 @@ def get_data(symbol):
 
 
 # =========================
-# BUY ENGINE (PATCHED ONLY)
+# ATR
+# =========================
+def atr(df, period=14):
+    high = df["high"]
+    low = df["low"]
+    close = df["close"]
+
+    tr = pd.concat([
+        high - low,
+        (high - close.shift()).abs(),
+        (low - close.shift()).abs()
+    ], axis=1).max(axis=1)
+
+    return tr.rolling(period).mean().iloc[-1]
+
+
+# =========================
+# STRATEGY HELPERS
+# =========================
+def get_threshold(symbol):
+    mode = STRATEGY_MODE.get(symbol, "DEFAULT")
+
+    if mode == "FAST":
+        return 0.0007
+    if mode == "SLOW":
+        return 0.0013
+
+    return 0.0010
+
+
+# =========================
+# ANALYZE
+# =========================
+def analyze(symbol):
+    logger.info(f"STARTING ANALYSIS FOR {symbol}")
+
+    df = get_data(symbol)
+
+    if df is None or len(df) < 60:
+        return 0.0, "BAD_DATA"
+
+    price = float(df["close"].iloc[-1])
+
+    fast = df["close"].rolling(FAST_MA).mean().iloc[-1]
+    slow = df["close"].rolling(SLOW_MA).mean().iloc[-1]
+    vol = atr(df, ATR_PERIOD)
+
+    current_vol_ratio = vol / price
+
+    state["vol_history"][symbol].append(current_vol_ratio)
+    if len(state["vol_history"][symbol]) > 20:
+        state["vol_history"][symbol].pop(0)
+
+    if len(state["vol_history"][symbol]) >= 5:
+        avg_vol_ratio = sum(state["vol_history"][symbol]) / len(state["vol_history"][symbol])
+        dynamic_threshold = avg_vol_ratio * 0.85
+    else:
+        avg_vol_ratio = 0
+        dynamic_threshold = get_threshold(symbol)
+
+    final_threshold = max(get_threshold(symbol), dynamic_threshold)
+
+    if pd.isna(fast) or pd.isna(slow) or pd.isna(vol):
+        return price, "NO_SIGNAL"
+
+    trend = "BULLISH" if fast > slow else "BEARISH"
+
+    logger.info(
+        f"{symbol} TREND={trend} | VolRatio={current_vol_ratio:.4f} | AvgRatio={avg_vol_ratio:.4f}"
+    )
+
+    if current_vol_ratio < final_threshold:
+        return price, f"{trend}_LOW_VOL_SKIP"
+
+    return price, trend
+
+
+# =========================
+# SAFETY
+# =========================
+def cooldown_ok(symbol):
+    last = state["last_trade_time"].get(symbol)
+    if not last:
+        return True
+    return (time.time() - last) > COOLDOWN_SECONDS
+
+
+def market_open_safety():
+    try:
+        clock = api.get_clock()
+        return clock.is_open
+    except:
+        return False
+
+
+# =========================
+# BUY ENGINE
 # =========================
 def buy(symbol):
     global ENABLE_TRADING
 
+    # 🔴 HARD MARKET LOCK (NEW FIX)
     try:
         clock = api.get_clock()
         if not clock.is_open:
@@ -167,23 +325,18 @@ def buy(symbol):
     if state["trade_count"] >= MAX_TRADES_PER_DAY:
         return
 
+    if not cooldown_ok(symbol):
+        return
+
     positions = api.get_all_positions()
     if any(p.symbol == symbol for p in positions):
         return
 
-    df = get_data(symbol)
-    if df is None:
-        return
+    price, signal = analyze(symbol)
 
-    price = float(df["close"].iloc[-1])
-    fast = df["close"].rolling(FAST_MA).mean().iloc[-1]
-    slow = df["close"].rolling(SLOW_MA).mean().iloc[-1]
+    logger.info(f"{symbol} SIGNAL: {signal}")
 
-    trend = "BULLISH" if fast > slow else "BEARISH"
-
-    logger.info(f"{symbol} SIGNAL RAW -> {trend}")
-
-    if trend != "BULLISH":
+    if signal != "BULLISH":
         return
 
     account = api.get_account()
@@ -200,31 +353,19 @@ def buy(symbol):
             time_in_force=TimeInForce.DAY
         )
 
-        # 🔥 SUBMIT ORDER
-        response = api.submit_order(order_data=order)
+        api.submit_order(order_data=order)
 
-        # 🔥 FIX: LOG EVERYTHING (THIS WAS YOUR MAIN ISSUE)
-        logger.info(f"""
-========================
-ORDER PLACED
-Symbol: {symbol}
-Order ID: {response.id}
-Status: {response.status}
-Notional: {spend}
-Trend: {trend}
-========================
-""")
-
-        state["last_order_id"][symbol] = response.id
         state["last_trade_time"][symbol] = time.time()
         state["trade_count"] += 1
+
+        logger.info(f"BUY CONFIRMED {symbol} ${spend:.2f}")
 
     except Exception as e:
         logger.error(f"{symbol} buy error: {e}")
 
 
 # =========================
-# POSITION MANAGEMENT (UNCHANGED)
+# POSITIONS
 # =========================
 def manage_positions():
     try:
@@ -269,17 +410,24 @@ logger.info("🚀 SENTINEL LIVE ENGINE STARTED")
 
 while True:
     try:
-        if api.get_clock().is_open:
+        reset_daily_state()
+        check_circuit_breaker()
+
+        if market_open_safety():
+
             for sym in SYMBOLS:
                 logger.info(f"LOOP START -> {sym}")
                 buy(sym)
 
             manage_positions()
+            print_dashboard()
 
         else:
-            logger.info("Market closed")
+            clock = api.get_clock()
+            logger.info(f"Market Open={clock.is_open} | Trades Today={state['trade_count']}")
+            print_dashboard()
 
     except Exception as e:
         logger.error(f"loop error: {e}")
 
-    time.sleep(60) look at my code does it fix the issue that my bot bought xle and lmt but my logs don't show 
+    time.sleep(60)
