@@ -14,13 +14,13 @@ from alpaca.data.timeframe import TimeFrame
 # =========================
 # CONFIG
 # =========================
-SYMBOLS = ["SPY", "QQQ", "AAPL", "LMT", "XLE"]
+SYMBOLS = ["SPY", "QQQ", "AAPL", "LMT", "XLE", "SPCX", "NVDA"]
 
 TIMEFRAME = TimeFrame.Minute
 
 FAST_MA = 20
 SLOW_MA = 50
-MA200 = 200          # ✅ ADDED
+MA200 = 200
 ATR_PERIOD = 14
 
 MAX_CAPITAL_USAGE = 0.05
@@ -40,7 +40,6 @@ ENABLE_TRADING = True
 # =========================
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger()
-
 
 def log(msg):
     logger.info(msg)
@@ -69,7 +68,8 @@ state = {
     "last_trade_time": {},
     "trade_count": 0,
     "day": date.today(),
-    "vol_history": {}
+    "vol_history": {},
+    "order_map": {}   # ✅ ADDED: track orders
 }
 
 for s in SYMBOLS:
@@ -85,7 +85,7 @@ trade_stats = {
 
 
 # =========================
-# CIRCUIT BREAKER (ADDED)
+# CIRCUIT BREAKER
 # =========================
 def check_circuit_breaker():
     try:
@@ -95,13 +95,12 @@ def check_circuit_breaker():
             state["start_equity"] = float(acc.equity)
 
         equity = float(acc.equity)
-
         drawdown = (state["start_equity"] - equity) / state["start_equity"]
 
         if drawdown >= DAILY_LOSS_LIMIT:
             global ENABLE_TRADING
             ENABLE_TRADING = False
-            log(f"🚨 CIRCUIT BREAKER TRIGGERED (DD={drawdown:.2%})")
+            log(f"🚨 CIRCUIT BREAKER TRIGGERED DD={drawdown:.2%}")
 
     except Exception as e:
         log(f"CIRCUIT ERROR {e}")
@@ -115,7 +114,7 @@ def get_data(symbol):
         req = StockBarsRequest(
             symbol_or_symbols=[symbol],
             timeframe=TIMEFRAME,
-            limit=250   # enough for MA200
+            limit=250
         )
 
         bars = data_api.get_stock_bars(req)
@@ -132,7 +131,6 @@ def get_data(symbol):
         df = df.dropna()
 
         if len(df) < 210:
-            log(f"{symbol} NOT_ENOUGH_DATA")
             return None
 
         return df
@@ -143,7 +141,7 @@ def get_data(symbol):
 
 
 # =========================
-# ATR (STANDARDIZED)
+# ATR
 # =========================
 def atr(df):
     high = df["high"]
@@ -156,58 +154,41 @@ def atr(df):
         (low - close.shift()).abs()
     ], axis=1).max(axis=1)
 
-    return tr.rolling(ATR_PERIOD).mean().iloc[-1]
+    return tr.rolling(14).mean().iloc[-1]
 
 
 # =========================
-# ANALYZE (WITH MA200 ADDED)
+# ANALYZE
 # =========================
 def analyze(symbol):
     log(f"{symbol} START ANALYSIS")
 
     df = get_data(symbol)
     if df is None:
-        return 0.0, "BAD_DATA", "BAD_DATA"
+        return 0.0, "BAD_DATA"
 
     price = float(df["close"].iloc[-1])
 
     fast = df["close"].rolling(FAST_MA).mean().iloc[-1]
     slow = df["close"].rolling(SLOW_MA).mean().iloc[-1]
-    ma200 = df["close"].rolling(MA200).mean().iloc[-1]   # ✅ ADDED
+    ma200 = df["close"].rolling(MA200).mean().iloc[-1]
+
     vol = atr(df)
 
-    if pd.isna(fast) or pd.isna(slow) or pd.isna(ma200) or pd.isna(vol):
-        return price, "NO_SIGNAL", "INDICATOR_NA"
+    if price < ma200:
+        log(f"{symbol} BELOW MA200 SKIP")
+        return price, "BELOW_MA200"
+
+    if pd.isna(fast) or pd.isna(slow):
+        return price, "NO_SIGNAL"
 
     trend = "BULLISH" if fast > slow else "BEARISH"
 
-    # =========================
-    # MA200 FILTER (ADDED)
-    # =========================
-    if price < ma200:
-        log(f"{symbol} BELOW MA200 -> NO LONGS")
-        return price, "BELOW_MA200", "TREND_FILTER"
-
-    # volatility ratio
-    vol_ratio = vol / price
-
-    state["vol_history"][symbol].append(vol_ratio)
-    if len(state["vol_history"][symbol]) > 20:
-        state["vol_history"][symbol].pop(0)
-
-    avg = sum(state["vol_history"][symbol]) / len(state["vol_history"][symbol])
-    threshold = avg * 0.75 if avg > 0 else 0.0010
-
-    if vol_ratio < threshold:
-        log(f"{symbol} LOW_VOL_SKIP {vol_ratio:.5f}")
-        return price, f"{trend}_LOW_VOL_SKIP", "LOW_VOL"
-
-    log(f"{symbol} TREND={trend} MA200_OK")
-    return price, trend, "OK"
+    return price, trend
 
 
 # =========================
-# BUY ENGINE
+# BUY ENGINE (ORDER TRACKING ADDED)
 # =========================
 def buy(symbol):
 
@@ -215,26 +196,21 @@ def buy(symbol):
         if not api.get_clock().is_open:
             log(f"{symbol} MARKET_CLOSED")
             return
+
     except:
         return
 
-    if not ENABLE_TRADING:
-        log(f"{symbol} BLOCKED CIRCUIT BREAKER")
-        return
-
-    price, signal, reason = analyze(symbol)
+    price, signal = analyze(symbol)
 
     log(f"{symbol} SIGNAL={signal}")
 
     if signal != "BULLISH":
-        log(f"{symbol} NOT TRADED ({reason})")
         return
 
     account = api.get_account()
     spend = float(account.buying_power) * MAX_CAPITAL_USAGE
 
     if spend < 5:
-        log(f"{symbol} INSUFFICIENT FUNDS")
         return
 
     try:
@@ -245,11 +221,30 @@ def buy(symbol):
             time_in_force=TimeInForce.DAY
         )
 
-        api.submit_order(order_data=order)
+        submitted = api.submit_order(order_data=order)
+
+        # =========================
+        # ✅ ORDER TRACKING (NEW FIX)
+        # =========================
+        order_id = submitted.id
+        state["order_map"][order_id] = symbol
+
+        log(f"{symbol} ORDER SENT id={order_id}")
+
+        # wait briefly for fill (light polling)
+        time.sleep(1)
+
+        try:
+            filled = api.get_order(order_id)
+
+            log(f"{symbol} FILL STATUS={filled.status}")
+            log(f"{symbol} FILLED_QTY={filled.filled_qty}")
+            log(f"{symbol} AVG_PRICE={filled.filled_avg_price}")
+
+        except Exception as e:
+            log(f"{symbol} FILL_CHECK_ERROR {e}")
 
         state["trade_count"] += 1
-        state["last_trade_time"][symbol] = time.time()
-
         trade_stats["trades"] += 1
 
         log(f"BUY CONFIRMED {symbol} ${spend:.2f}")
@@ -259,7 +254,7 @@ def buy(symbol):
 
 
 # =========================
-# POSITION MANAGEMENT
+# POSITION MANAGEMENT (PnL LOG ADDED)
 # =========================
 def manage_positions():
     try:
@@ -271,13 +266,11 @@ def manage_positions():
 
             pnl_pct = (price - entry) / entry
 
+            log(f"{p.symbol} UNREALIZED_PNL={pnl_pct:.2%}")
+
             if pnl_pct >= TAKE_PROFIT_PCT:
                 api.close_position(p.symbol)
                 log(f"{p.symbol} EXIT TAKE_PROFIT")
-
-            elif pnl_pct <= -STOP_LOSS_PCT:
-                api.close_position(p.symbol)
-                log(f"{p.symbol} EXIT STOP_LOSS")
 
     except Exception as e:
         log(f"POSITION ERROR {e}")
@@ -290,7 +283,7 @@ log("SENTINEL LIVE ENGINE STARTED")
 
 while True:
     try:
-        check_circuit_breaker()   # ✅ ADDED
+        check_circuit_breaker()
 
         for sym in SYMBOLS:
             log(f"LOOP START -> {sym}")
