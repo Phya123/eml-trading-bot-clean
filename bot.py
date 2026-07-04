@@ -14,7 +14,7 @@ from alpaca.data.timeframe import TimeFrame
 # =========================
 # CONFIG
 # =========================
-SYMBOLS = ["SPY", "QQQ", "AAPL", "LMT", "XLE", "SPCX", "NVDA"]
+SYMBOLS = symbols = ["SPY", "QQQ", "AAPL", "LMT", "XLE", "SPCX", "NVDA", "ASML", "GSK", "NSRGY", "TSM"]
 
 TIMEFRAME = TimeFrame.Minute
 
