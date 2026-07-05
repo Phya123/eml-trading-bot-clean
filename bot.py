@@ -14,7 +14,7 @@ from alpaca.data.timeframe import TimeFrame
 # =========================
 # CONFIG
 # =========================
-SYMBOLS = symbols = ["SPY", "QQQ", "AAPL", "LMT", "XLE", "SPCX", "NVDA", "ASML", "GSK", "NSRGY", "TSM"]
+SYMBOLS = ["SPY", "QQQ", "AAPL", "LMT", "XLE", "SPCX", "NVDA", "ASML", "TSM", "DEO", "NVS"]
 
 TIMEFRAME = TimeFrame.Minute
 
@@ -82,7 +82,80 @@ trade_stats = {
     "losses": 0,
     "pnl": 0.0
 }
+# =========================
+# SYMBOL PERFORMANCE TRACKER
+# =========================
+SYMBOL_STATS_FILE = "symbol_stats.csv"
 
+
+def initialize_symbol_stats():
+    if not os.path.exists(SYMBOL_STATS_FILE):
+        with open(SYMBOL_STATS_FILE, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "Symbol",
+                "Trades",
+                "Wins",
+                "Losses",
+                "Total_PnL",
+                "Average_PnL"
+            ])
+
+
+def update_symbol_stats(symbol, pnl):
+
+    rows = {}
+
+    if os.path.exists(SYMBOL_STATS_FILE):
+        with open(SYMBOL_STATS_FILE, newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                rows[row["Symbol"]] = row
+
+    if symbol not in rows:
+        rows[symbol] = {
+            "Symbol": symbol,
+            "Trades": "0",
+            "Wins": "0",
+            "Losses": "0",
+            "Total_PnL": "0",
+            "Average_PnL": "0"
+        }
+
+    stats = rows[symbol]
+
+    stats["Trades"] = str(int(stats["Trades"]) + 1)
+
+    if pnl > 0:
+        stats["Wins"] = str(int(stats["Wins"]) + 1)
+    else:
+        stats["Losses"] = str(int(stats["Losses"]) + 1)
+
+    total = float(stats["Total_PnL"]) + pnl
+    stats["Total_PnL"] = str(total)
+    stats["Average_PnL"] = str(total / int(stats["Trades"]))
+
+    with open(SYMBOL_STATS_FILE, "w", newline="") as f:
+        writer = csv.writer(f)
+
+        writer.writerow([
+            "Symbol",
+            "Trades",
+            "Wins",
+            "Losses",
+            "Total_PnL",
+            "Average_PnL"
+        ])
+
+        for row in rows.values():
+            writer.writerow([
+                row["Symbol"],
+                row["Trades"],
+                row["Wins"],
+                row["Losses"],
+                row["Total_PnL"],
+                row["Average_PnL"]
+            ])
 
 # =========================
 # CIRCUIT BREAKER
@@ -269,9 +342,11 @@ def manage_positions():
             log(f"{p.symbol} UNREALIZED_PNL={pnl_pct:.2%}")
 
             if pnl_pct >= TAKE_PROFIT_PCT:
-                api.close_position(p.symbol)
-                log(f"{p.symbol} EXIT TAKE_PROFIT")
+    api.close_position(p.symbol)
+    log(f"{p.symbol} EXIT TAKE_PROFIT")
 
+    realized_pnl = (price - entry) / entry * 100
+    update_symbol_stats(p.symbol, realized_pnl)
     except Exception as e:
         log(f"POSITION ERROR {e}")
 
@@ -280,7 +355,7 @@ def manage_positions():
 # MAIN LOOP
 # =========================
 log("SENTINEL LIVE ENGINE STARTED")
-
+initialize_symbol_stats()
 while True:
     try:
         check_circuit_breaker()
