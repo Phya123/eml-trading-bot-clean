@@ -342,11 +342,12 @@ def manage_positions():
             log(f"{p.symbol} UNREALIZED_PNL={pnl_pct:.2%}")
 
             if pnl_pct >= TAKE_PROFIT_PCT:
-    api.close_position(p.symbol)
-    log(f"{p.symbol} EXIT TAKE_PROFIT")
+                api.close_position(p.symbol)
+                log(f"{p.symbol} EXIT TAKE_PROFIT")
 
-    realized_pnl = (price - entry) / entry * 100
-    update_symbol_stats(p.symbol, realized_pnl)
+                realized_pnl = (price - entry) / entry * 100
+                update_symbol_stats(p.symbol, realized_pnl)
+
     except Exception as e:
         log(f"POSITION ERROR {e}")
 
