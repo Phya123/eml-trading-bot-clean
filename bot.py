@@ -340,6 +340,7 @@ def manage_positions():
             pnl_pct = (price - entry) / entry
 
             log(f"{p.symbol} UNREALIZED_PNL={pnl_pct:.2%}")
+            log(f"{p.symbol} TP={TAKE_PROFIT_PCT:.2%} | CURRENT={pnl_pct:.2%}")
 
             if pnl_pct >= TAKE_PROFIT_PCT:
                 api.close_position(p.symbol)
