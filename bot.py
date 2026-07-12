@@ -264,20 +264,46 @@ def analyze(symbol):
 # BUY ENGINE (ORDER TRACKING ADDED)
 # =========================
 def buy(symbol):
+
     # =========================
     # STOCK ONLY SAFETY LOCK
     # =========================
     if symbol not in SYMBOLS:
         log(f"{symbol} BLOCKED - NOT IN STOCK LIST")
         return
+
+    # =========================
+    # MARKET OPEN CHECK
+    # =========================
     try:
         if not api.get_clock().is_open:
             log(f"{symbol} MARKET_CLOSED")
             return
 
-    except:
+    except Exception as e:
+        log(f"{symbol} CLOCK_ERROR {e}")
         return
 
+
+    # =========================
+    # EXISTING POSITION CHECK
+    # =========================
+    try:
+        positions = api.get_all_positions()
+
+        for p in positions:
+            if p.symbol == symbol:
+                log(f"{symbol} SKIPPED - POSITION_EXISTS")
+                return
+
+    except Exception as e:
+        log(f"{symbol} POSITION_CHECK_ERROR {e}")
+        return
+
+
+    # =========================
+    # ANALYSIS
+    # =========================
     price, signal = analyze(symbol)
 
     log(f"{symbol} SIGNAL={signal}")
@@ -285,12 +311,21 @@ def buy(symbol):
     if signal != "BULLISH":
         return
 
+
+    # =========================
+    # CAPITAL CHECK
+    # =========================
     account = api.get_account()
     spend = float(account.buying_power) * MAX_CAPITAL_USAGE
 
     if spend < 5:
+        log(f"{symbol} SKIPPED - INSUFFICIENT_BUYING_POWER")
         return
 
+
+    # =========================
+    # ORDER SUBMISSION
+    # =========================
     try:
         order = MarketOrderRequest(
             symbol=symbol,
@@ -300,6 +335,8 @@ def buy(symbol):
         )
 
         submitted = api.submit_order(order_data=order)
+
+        log(f"{symbol} ORDER SENT id={submitted.id}")
 
         # =========================
         # ✅ ORDER TRACKING (NEW FIX)
@@ -361,17 +398,29 @@ def manage_positions():
 # =========================
 # MAIN LOOP
 # =========================
+
 log("SENTINEL LIVE ENGINE STARTED")
+
 initialize_symbol_stats()
+
 while True:
     try:
         check_circuit_breaker()
 
-        for sym in SYMBOLS:
-            log(f"LOOP START -> {sym}")
-            buy(sym)
+        # Market status check
+        clock = api.get_clock()
 
-        manage_positions()
+        if not clock.is_open:
+            log("MARKET CLOSED - MONITORING ONLY")
+            log_dashboard()
+        else:
+            for sym in SYMBOLS:
+                log(f"LOOP START -> {sym}")
+                buy(sym)
+
+            manage_positions()
+
+            log_dashboard()
 
     except Exception as e:
         log(f"LOOP ERROR {e}")
