@@ -238,6 +238,7 @@ def analyze(symbol):
 
     df = get_data(symbol)
     if df is None:
+        log(f"{symbol} SIGNAL=BAD_DATA")
         return 0.0, "BAD_DATA"
 
     price = float(df["close"].iloc[-1])
@@ -248,14 +249,26 @@ def analyze(symbol):
 
     vol = atr(df)
 
+    # =========================
+    # DETAILED ENGINE LOGS
+    # =========================
+    log(f"{symbol} PRICE={price:.2f}")
+    log(f"{symbol} FAST_MA={fast:.2f} SLOW_MA={slow:.2f}")
+    log(f"{symbol} MA200={ma200:.2f}")
+    log(f"{symbol} ATR={vol:.4f}")
+
     if price < ma200:
         log(f"{symbol} BELOW MA200 SKIP")
         return price, "BELOW_MA200"
 
     if pd.isna(fast) or pd.isna(slow):
+        log(f"{symbol} SIGNAL=NO_SIGNAL")
         return price, "NO_SIGNAL"
 
     trend = "BULLISH" if fast > slow else "BEARISH"
+
+    log(f"{symbol} TREND={trend}")
+    log(f"{symbol} SIGNAL={trend}")
 
     return price, trend
 
