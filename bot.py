@@ -264,7 +264,12 @@ def analyze(symbol):
 # BUY ENGINE (ORDER TRACKING ADDED)
 # =========================
 def buy(symbol):
-
+    # =========================
+    # STOCK ONLY SAFETY LOCK
+    # =========================
+    if symbol not in SYMBOLS:
+        log(f"{symbol} BLOCKED - NOT IN STOCK LIST")
+        return
     try:
         if not api.get_clock().is_open:
             log(f"{symbol} MARKET_CLOSED")
