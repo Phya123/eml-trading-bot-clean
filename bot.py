@@ -393,7 +393,33 @@ def manage_positions():
 
     except Exception as e:
         log(f"POSITION ERROR {e}")
+# =========================
+# LIVE DASHBOARD
+# =========================
+def log_dashboard():
+    try:
+        acc = api.get_account()
+        clock = api.get_clock()
+        positions = api.get_all_positions()
 
+        win_rate = 0
+        if trade_stats["trades"] > 0:
+            win_rate = (trade_stats["wins"] / trade_stats["trades"]) * 100
+
+        log("===================================")
+        log("📊 SENTINEL LIVE DASHBOARD")
+        log(f"Market: {'OPEN' if clock.is_open else 'CLOSED'}")
+        log(f"Equity: ${float(acc.equity):.2f}")
+        log(f"Buying Power: ${float(acc.buying_power):.2f}")
+        log(f"Open Positions: {len(positions)}")
+        log(f"Trades: {trade_stats['trades']}")
+        log(f"Wins: {trade_stats['wins']} | Losses: {trade_stats['losses']}")
+        log(f"Win Rate: {win_rate:.2f}%")
+        log(f"PnL: {trade_stats['pnl']:.4f}")
+        log("===================================")
+
+    except Exception as e:
+        log(f"DASHBOARD ERROR {e}")
 
 # =========================
 # MAIN LOOP
