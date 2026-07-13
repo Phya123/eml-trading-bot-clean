@@ -298,14 +298,16 @@ def analyze(symbol):
 # =========================
 def buy(symbol):
 
-    # =========================
-    # STOCK ONLY SAFETY LOCK
-    # =========================
-    if symbol not in SYMBOLS:
-        log(f"{symbol} BLOCKED - NOT IN STOCK LIST")
-        return
-       if not verify_stock_asset(symbol):
-    return 
+# =========================
+# STOCK ONLY SAFETY LOCK
+# =========================
+if symbol not in SYMBOLS:
+    log(f"{symbol} BLOCKED - NOT IN STOCK LIST")
+    return
+
+# Verify this is a US stock
+if not verify_stock_asset(symbol):
+    return
 
     # =========================
     # MARKET OPEN CHECK
@@ -381,7 +383,7 @@ def buy(symbol):
 
         log(f"{symbol} ORDER SENT id={order_id}")
 
-        # wait briefly for fill (light polling)
+        # Wait briefly for fill
         time.sleep(1)
 
         try:
