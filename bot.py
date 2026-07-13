@@ -298,16 +298,15 @@ def analyze(symbol):
 # =========================
 def buy(symbol):
 
-# =========================
-# STOCK ONLY SAFETY LOCK
-# =========================
-if symbol not in SYMBOLS:
-    log(f"{symbol} BLOCKED - NOT IN STOCK LIST")
-    return
+    # =========================
+    # STOCK ONLY SAFETY LOCK
+    # =========================
+    if symbol not in SYMBOLS:
+        log(f"{symbol} BLOCKED - NOT IN STOCK LIST")
+        return
 
-# Verify this is a US stock
-if not verify_stock_asset(symbol):
-    return
+    if not verify_stock_asset(symbol):
+        return
 
     # =========================
     # MARKET OPEN CHECK
