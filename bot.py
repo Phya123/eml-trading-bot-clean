@@ -34,6 +34,26 @@ MAX_TRADES_PER_DAY = 10
 
 ENABLE_TRADING = True
 
+# =========================
+# ASSET SAFETY FILTER
+# =========================
+
+ALLOWED_ASSET_CLASS = "us_equity"
+
+
+def verify_stock_asset(symbol):
+    try:
+        asset = api.get_asset(symbol)
+
+        if asset.asset_class != ALLOWED_ASSET_CLASS:
+            log(f"{symbol} BLOCKED - NOT STOCK")
+            return False
+
+        return True
+
+    except Exception as e:
+        log(f"{symbol} ASSET CHECK ERROR {e}")
+        return False
 
 # =========================
 # LOGGING
@@ -284,6 +304,8 @@ def buy(symbol):
     if symbol not in SYMBOLS:
         log(f"{symbol} BLOCKED - NOT IN STOCK LIST")
         return
+       if not verify_stock_asset(symbol):
+    return 
 
     # =========================
     # MARKET OPEN CHECK
@@ -397,9 +419,18 @@ def manage_positions():
             log(f"{p.symbol} UNREALIZED_PNL={pnl_pct:.2%}")
             log(f"{p.symbol} TP={TAKE_PROFIT_PCT:.2%} | CURRENT={pnl_pct:.2%}")
 
+            # Take Profit
             if pnl_pct >= TAKE_PROFIT_PCT:
                 api.close_position(p.symbol)
                 log(f"{p.symbol} EXIT TAKE_PROFIT")
+
+                realized_pnl = (price - entry) / entry * 100
+                update_symbol_stats(p.symbol, realized_pnl)
+
+            # Stop Loss
+            elif pnl_pct <= -STOP_LOSS_PCT:
+                api.close_position(p.symbol)
+                log(f"{p.symbol} EXIT STOP LOSS")
 
                 realized_pnl = (price - entry) / entry * 100
                 update_symbol_stats(p.symbol, realized_pnl)
