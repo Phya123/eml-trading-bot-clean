@@ -405,7 +405,6 @@ try:
 
     if spend >= price:
 
-        # Buy whole shares
         qty = int(spend // price)
 
         if qty > 0:
@@ -421,16 +420,16 @@ try:
 
             log(
                 f"BUY ORDER SENT {symbol} "
-                f"QTY={qty} PRICE=${price:.2f}"
+                f"QTY={qty}"
             )
 
         else:
-            log(f"SKIP {symbol} insufficient capital")
+            log(f"SKIP {symbol} qty calculated as 0")
 
     else:
         log(
-            f"SKIP {symbol} spend ${spend:.2f} "
-            f"less than price ${price:.2f}"
+            f"SKIP {symbol} "
+            f"Not enough capital"
         )
 
 except Exception as e:
