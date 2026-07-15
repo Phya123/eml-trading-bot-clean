@@ -398,22 +398,43 @@ def buy(symbol):
         return
 
 
-    # =========================
-    # ORDER SUBMISSION
-    # =========================
-    try:
-        
+# =========================
+# ORDER SUBMISSION
+# =========================
+try:
+
     if spend >= price:
 
-    # Buy whole shares
-    qty = int(spend // price)
+        # Buy whole shares
+        qty = int(spend // price)
 
-    order = MarketOrderRequest(
-        symbol=symbol,
-        qty=qty,
-        side=OrderSide.BUY,
-        time_in_force=TimeInForce.DAY
-    )
+        if qty > 0:
+
+            order = MarketOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=OrderSide.BUY,
+                time_in_force=TimeInForce.DAY
+            )
+
+            submitted = api.submit_order(order)
+
+            log(
+                f"BUY ORDER SENT {symbol} "
+                f"QTY={qty} PRICE=${price:.2f}"
+            )
+
+        else:
+            log(f"SKIP {symbol} insufficient capital")
+
+    else:
+        log(
+            f"SKIP {symbol} spend ${spend:.2f} "
+            f"less than price ${price:.2f}"
+        )
+
+except Exception as e:
+    log(f"ORDER ERROR {symbol}: {e}")
 
 else:
 
