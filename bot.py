@@ -402,7 +402,8 @@ def buy(symbol):
     # ORDER SUBMISSION
     # =========================
     try:
-        if spend >= price:
+        
+    if spend >= price:
 
     # Buy whole shares
     qty = int(spend // price)
