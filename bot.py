@@ -445,7 +445,7 @@ else:
         time_in_force=TimeInForce.DAY
     )
 
-        submitted = api.submit_order(order_data=order)
+        
 
         log(f"{symbol} ORDER SENT id={submitted.id}")
 
