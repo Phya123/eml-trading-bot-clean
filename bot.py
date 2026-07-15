@@ -25,10 +25,11 @@ ATR_PERIOD = 14
 
 MAX_CAPITAL_USAGE = 0.05
 
-STOP_LOSS_PCT = 0.02
-TAKE_PROFIT_PCT = 0.04
+STOP_LOSS_PCT = 0.03
+TAKE_PROFIT_PCT = 0.08
 
-COOLDOWN_SECONDS = 120
+COOLDOWN_SECONDS = 900      # 15 minutes
+MIN_HOLD_MINUTES = 15
 DAILY_LOSS_LIMIT = 0.03
 MAX_TRADES_PER_DAY = 10
 
@@ -86,10 +87,11 @@ data_api = StockHistoricalDataClient(
 state = {
     "start_equity": None,
     "last_trade_time": {},
+    "entry_time": {},
     "trade_count": 0,
     "day": date.today(),
     "vol_history": {},
-    "order_map": {}   # ✅ ADDED: track orders
+    "order_map": {}
 }
 
 for s in SYMBOLS:
@@ -269,29 +271,66 @@ def analyze(symbol):
 
     vol = atr(df)
 
-    # =========================
-    # DETAILED ENGINE LOGS
-    # =========================
-    log(f"{symbol} PRICE={price:.2f}")
-    log(f"{symbol} FAST_MA={fast:.2f} SLOW_MA={slow:.2f}")
-    log(f"{symbol} MA200={ma200:.2f}")
-    log(f"{symbol} ATR={vol:.4f}")
+    
+# =========================
+# DETAILED ENGINE LOGS
+# =========================
 
-    if price < ma200:
-        log(f"{symbol} BELOW MA200 SKIP")
-        return price, "BELOW_MA200"
+log(f"{symbol} PRICE={price:.2f}")
+log(f"{symbol} FAST_MA={fast:.2f} SLOW_MA={slow:.2f}")
+log(f"{symbol} MA200={ma200:.2f}")
+log(f"{symbol} ATR={vol:.4f}")
 
-    if pd.isna(fast) or pd.isna(slow):
-        log(f"{symbol} SIGNAL=NO_SIGNAL")
-        return price, "NO_SIGNAL"
+# Validate indicators
+if pd.isna(fast) or pd.isna(slow) or pd.isna(ma200):
+    log(f"{symbol} SIGNAL=NO_SIGNAL | Missing indicators")
+    return price, "NO_SIGNAL"
 
-    trend = "BULLISH" if fast > slow else "BEARISH"
 
-    log(f"{symbol} TREND={trend}")
-    log(f"{symbol} SIGNAL={trend}")
+# Volatility calculation
+vol_ratio = vol / price if price > 0 else 0
 
-    return price, trend
 
+# Trend indication
+if price > ma200:
+    trend = "BULLISH"
+else:
+    trend = "BEARISH"
+
+
+# Momentum indication
+if fast > slow:
+    momentum = "UP"
+else:
+    momentum = "DOWN"
+
+
+# Final signal
+if (
+    trend == "BULLISH"
+    and momentum == "UP"
+    and vol_ratio >= 0.002
+):
+    signal = "BUY_READY"
+
+elif (
+    trend == "BEARISH"
+    and momentum == "DOWN"
+):
+    signal = "BEARISH"
+
+else:
+    signal = "NEUTRAL"
+
+
+log(
+    f"{symbol} SIGNAL={signal} | "
+    f"TREND={trend} | "
+    f"MOMENTUM={momentum} | "
+    f"VOL_RATIO={vol_ratio:.4f}"
+)
+
+return price, signal
 
 # =========================
 # BUY ENGINE (ORDER TRACKING ADDED)
@@ -363,12 +402,27 @@ def buy(symbol):
     # ORDER SUBMISSION
     # =========================
     try:
-        order = MarketOrderRequest(
-            symbol=symbol,
-            notional=round(spend, 2),
-            side=OrderSide.BUY,
-            time_in_force=TimeInForce.DAY
-        )
+        if spend >= price:
+
+    # Buy whole shares
+    qty = int(spend // price)
+
+    order = MarketOrderRequest(
+        symbol=symbol,
+        qty=qty,
+        side=OrderSide.BUY,
+        time_in_force=TimeInForce.DAY
+    )
+
+else:
+
+    # Buy fractional shares
+    order = MarketOrderRequest(
+        symbol=symbol,
+        notional=round(spend, 2),
+        side=OrderSide.BUY,
+        time_in_force=TimeInForce.DAY
+    )
 
         submitted = api.submit_order(order_data=order)
 
@@ -379,6 +433,8 @@ def buy(symbol):
         # =========================
         order_id = submitted.id
         state["order_map"][order_id] = symbol
+        state["entry_time"][symbol] = datetime.now()
+        state["last_trade_time"][symbol] = datetime.now()
 
         log(f"{symbol} ORDER SENT id={order_id}")
 
@@ -415,26 +471,56 @@ def manage_positions():
             entry = float(p.avg_entry_price)
             price = float(p.current_price)
 
+            entry_time = state["entry_time"].get(p.symbol)
+
+            if entry_time:
+                held_minutes = (
+                    datetime.now() - entry_time
+                ).total_seconds() / 60
+
+                if held_minutes < MIN_HOLD_MINUTES:
+                    log(f"{p.symbol} HOLDING ({held_minutes:.1f} min)")
+                    continue
+
             pnl_pct = (price - entry) / entry
 
             log(f"{p.symbol} UNREALIZED_PNL={pnl_pct:.2%}")
-            log(f"{p.symbol} TP={TAKE_PROFIT_PCT:.2%} | CURRENT={pnl_pct:.2%}")
+            log(
+                f"{p.symbol} TP={TAKE_PROFIT_PCT:.2%} | "
+                f"CURRENT={pnl_pct:.2%}"
+            )
 
-            # Take Profit
+            # =========================
+            # TAKE PROFIT
+            # =========================
             if pnl_pct >= TAKE_PROFIT_PCT:
+
                 api.close_position(p.symbol)
+
                 log(f"{p.symbol} EXIT TAKE_PROFIT")
 
-                realized_pnl = (price - entry) / entry * 100
-                update_symbol_stats(p.symbol, realized_pnl)
+                realized_pnl = pnl_pct * 100
+                update_symbol_stats(
+                    p.symbol,
+                    realized_pnl
+                )
 
-            # Stop Loss
+
+            # =========================
+            # STOP LOSS
+            # =========================
             elif pnl_pct <= -STOP_LOSS_PCT:
+
                 api.close_position(p.symbol)
+
                 log(f"{p.symbol} EXIT STOP LOSS")
 
-                realized_pnl = (price - entry) / entry * 100
-                update_symbol_stats(p.symbol, realized_pnl)
+                realized_pnl = pnl_pct * 100
+                update_symbol_stats(
+                    p.symbol,
+                    realized_pnl
+                )
+
 
     except Exception as e:
         log(f"POSITION ERROR {e}")
