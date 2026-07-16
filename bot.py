@@ -53,7 +53,9 @@ TAKE_PROFIT_PCT = 0.08
 
 COOLDOWN_SECONDS = 900      # 15 minutes
 MIN_HOLD_MINUTES = 15
-
+# SMART PROFIT SYSTEM
+TRAILING_STOP_PCT = 0.02      # 2% trail
+BREAKEVEN_TRIGGER = 0.03      # activate trailing after +3%
 
 DAILY_LOSS_LIMIT = 0.03
 MAX_TRADES_PER_DAY = 10
@@ -133,22 +135,14 @@ data_api = StockHistoricalDataClient(
 # =========================
 
 state = {
-
     "start_equity": None,
-
     "last_trade_time": {},
-
-    # ADDED FOR MIN HOLD TIME
     "entry_time": {},
-
+    "highest_price": {},
     "trade_count": 0,
-
     "day": date.today(),
-
     "vol_history": {},
-
     "order_map": {}
-
 }
 
 
@@ -806,7 +800,7 @@ def buy(symbol):
 
         state["last_trade_time"][symbol] = datetime.now()
 
-
+        state["highest_price"][symbol] = price
 
         log(
             f"{symbol} ORDER SENT id={order_id}"
@@ -884,21 +878,31 @@ def manage_positions():
 
         positions = api.get_all_positions()
 
-
-
         for p in positions:
-
 
             entry = float(
                 p.avg_entry_price
             )
 
-
             price = float(
                 p.current_price
             )
 
+            # =========================
+            # TRACK HIGHEST PRICE
+            # =========================
+            highest = state["highest_price"].get(
+                p.symbol,
+                price
+            )
 
+            if price > highest:
+                highest = price
+                state["highest_price"][p.symbol] = highest
+
+            # Continue with your existing code...
+            # entry_time = state["entry_time"].get(p.symbol)
+            
 
             # =========================
             # MINIMUM HOLD PROTECTION
@@ -957,50 +961,52 @@ def manage_positions():
 
 
 
+           
             # =========================
-            # TAKE PROFIT
+            # SMART PROFIT SYSTEM
             # =========================
 
-            if pnl_pct >= TAKE_PROFIT_PCT:
+            if pnl_pct >= BREAKEVEN_TRIGGER:
 
-
-                api.close_position(
-                    p.symbol
+                trail_price = highest * (
+                    1 - TRAILING_STOP_PCT
                 )
-
 
                 log(
-                    f"{p.symbol} EXIT TAKE_PROFIT"
+                    f"{p.symbol} HIGH={highest:.2f} TRAIL={trail_price:.2f}"
                 )
 
+                if price <= trail_price:
+
+                    api.close_position(
+                        p.symbol
+                    )
+
+                    log(
+                        f"{p.symbol} EXIT TRAILING STOP"
+                    )
+
+                    realized_pnl = (
+                        price - entry
+                    ) / entry * 100
 
 
-                realized_pnl = (
-
-                    price - entry
-
-                ) / entry * 100
-
+                    update_symbol_stats(
+                        p.symbol,
+                        realized_pnl
+                    )
 
 
-                update_symbol_stats(
-                    p.symbol,
-                    realized_pnl
-                )
+                    trade_stats["pnl"] += realized_pnl
 
 
+                    if realized_pnl > 0:
 
-                trade_stats["pnl"] += realized_pnl
+                        trade_stats["wins"] += 1
 
+                    else:
 
-
-                if realized_pnl > 0:
-
-                    trade_stats["wins"] += 1
-
-                else:
-
-                    trade_stats["losses"] += 1
+                        trade_stats["losses"] += 1
 
 
 
