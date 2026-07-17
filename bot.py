@@ -740,7 +740,7 @@ def buy(symbol):
 
             # BUY WHOLE SHARES
 
-            qty = int(
+               qty = int(
                 spend // price
             )
 
