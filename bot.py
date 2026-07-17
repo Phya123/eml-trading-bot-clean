@@ -826,13 +826,12 @@ def buy(symbol):
 
 
 
-        # WAIT FOR FILL CHECK
+                # WAIT FOR FILL CHECK
 
         time.sleep(1)
 
 
-
-                try:
+        try:
 
             filled = api.get_order(order_id)
 
@@ -847,26 +846,6 @@ def buy(symbol):
             log(
                 f"{symbol} AVG_PRICE={filled.filled_avg_price}"
             )
-
-
-            if filled.status == "filled":
-
-                state["entry_time"][symbol] = datetime.now()
-
-                state["last_trade_time"][symbol] = datetime.now()
-
-                state["highest_price"][symbol] = float(
-                    filled.filled_avg_price
-                )
-
-                state["pending_orders"].pop(
-                    symbol,
-                    None
-                )
-
-                log(
-                    f"{symbol} ENTRY TRACKING STARTED"
-                )
 
 
         except Exception as e:
