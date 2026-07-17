@@ -764,7 +764,6 @@ def buy(symbol):
                 spend // price
             )
 
-
             if qty < 1:
 
                 log(
@@ -787,7 +786,7 @@ def buy(symbol):
             )
 
 
-        
+        else:
 
             # BUY FRACTIONAL SHARES
 
@@ -802,28 +801,6 @@ def buy(symbol):
                 time_in_force=TimeInForce.DAY
 
             )
-
-
-    
-
-        # BUY FRACTIONAL SHARES
-
-        order = MarketOrderRequest(
-
-            symbol=symbol,
-
-            notional=round(spend, 2),
-
-            side=OrderSide.BUY,
-
-            time_in_force=TimeInForce.DAY
-
-        )
-
-
-
-
-
         submitted = api.submit_order(
             order_data=order
         )
