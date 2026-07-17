@@ -730,43 +730,6 @@ def buy(symbol):
 
 
 
-    # =========================
-    # ORDER SUBMISSION
-    # WHOLE + FRACTIONAL SHARES
-    # =========================
-
-    
-
-
-            # BUY WHOLE SHARES
-
-               qty = int(
-                spend // price
-            )
-
-
-
-            if qty < 1:
-
-                log(
-                    f"{symbol} SHARE SIZE TOO SMALL"
-                )
-
-                return
-
-
-
-            order = MarketOrderRequest(
-
-                symbol=symbol,
-
-                qty=qty,
-
-                side=OrderSide.BUY,
-
-                time_in_force=TimeInForce.DAY
-
-            )
 
 
 
