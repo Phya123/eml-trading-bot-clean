@@ -142,7 +142,8 @@ state = {
     "trade_count": 0,
     "day": date.today(),
     "vol_history": {},
-    "order_map": {}
+    "order_map": {},
+    "pending_orders": {}
 }
 
 
@@ -549,8 +550,22 @@ def analyze(symbol):
 # =========================
 
 def buy(symbol):
+    # =========================
+    # GLOBAL TRADING LOCK
+    # =========================
 
+    if not ENABLE_TRADING:
+        log(f"{symbol} BLOCKED - TRADING DISABLED")
+        return
+    # =========================
+    # DAILY TRADE LIMIT
+    # =========================
 
+    if state["trade_count"] >= MAX_TRADES_PER_DAY:
+        log(
+            f"{symbol} BLOCKED - MAX DAILY TRADES REACHED"
+        )
+        return
     # =========================
     # STOCK ONLY SAFETY LOCK
     # =========================
@@ -775,6 +790,11 @@ def buy(symbol):
                 time_in_force=TimeInForce.DAY
 
             )
+                if symbol in state["pending_orders"]:
+        log(
+            f"{symbol} SKIPPED - ORDER_PENDING"
+        )
+        return
 
 
 
@@ -783,6 +803,7 @@ def buy(symbol):
         submitted = api.submit_order(
             order_data=order
         )
+        state["pending_orders"][symbol] = submitted.id
 
 
 
@@ -796,11 +817,7 @@ def buy(symbol):
 
         # TRACK ENTRY TIME
 
-        state["entry_time"][symbol] = datetime.now()
-
-        state["last_trade_time"][symbol] = datetime.now()
-
-        state["highest_price"][symbol] = price
+        
 
         log(
             f"{symbol} ORDER SENT id={order_id}"
@@ -814,31 +831,44 @@ def buy(symbol):
 
 
 
-        try:
-
+                try:
 
             filled = api.get_order(order_id)
-
-
 
             log(
                 f"{symbol} FILL STATUS={filled.status}"
             )
 
-
             log(
                 f"{symbol} FILLED_QTY={filled.filled_qty}"
             )
-
 
             log(
                 f"{symbol} AVG_PRICE={filled.filled_avg_price}"
             )
 
 
+            if filled.status == "filled":
+
+                state["entry_time"][symbol] = datetime.now()
+
+                state["last_trade_time"][symbol] = datetime.now()
+
+                state["highest_price"][symbol] = float(
+                    filled.filled_avg_price
+                )
+
+                state["pending_orders"].pop(
+                    symbol,
+                    None
+                )
+
+                log(
+                    f"{symbol} ENTRY TRACKING STARTED"
+                )
+
 
         except Exception as e:
-
 
             log(
                 f"{symbol} FILL_CHECK_ERROR {e}"
