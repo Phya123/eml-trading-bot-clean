@@ -165,6 +165,48 @@ trade_stats = {
 
 }
 # =========================
+# RECOVER EXISTING POSITIONS
+# =========================
+
+def recover_positions():
+
+    try:
+
+        positions = api.get_all_positions()
+
+        for p in positions:
+
+            symbol = p.symbol
+
+            entry = float(
+                p.avg_entry_price
+            )
+
+            current = float(
+                p.current_price
+            )
+
+
+            if symbol not in state["entry_time"]:
+
+                state["entry_time"][symbol] = datetime.now()
+
+                state["highest_price"][symbol] = max(
+                    entry,
+                    current
+                )
+
+                log(
+                    f"{symbol} POSITION RECOVERED ENTRY={entry:.2f}"
+                )
+
+
+    except Exception as e:
+
+        log(
+            f"POSITION RECOVERY ERROR {e}"
+        )
+# =========================
 # SYMBOL PERFORMANCE TRACKER
 # =========================
 
@@ -1224,6 +1266,8 @@ log(
 
 
 initialize_symbol_stats()
+
+recover_positions()
 
 
 
