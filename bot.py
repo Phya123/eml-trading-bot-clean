@@ -15,7 +15,8 @@ from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
-
+from alpaca.trading.requests import GetOrdersRequest
+from alpaca.trading.enums import QueryOrderStatus
 
 # =========================
 # CONFIG
@@ -1226,7 +1227,87 @@ def manage_positions():
 
 
 
+# =========================
+# ALPACA PERFORMANCE TRACKER
+# =========================
 
+def get_trade_history_stats():
+
+    try:
+
+        request = GetOrdersRequest(
+            status=QueryOrderStatus.CLOSED,
+            limit=500
+        )
+
+
+        orders = api.get_orders(
+            filter=request
+        )
+
+
+        trades = 0
+        wins = 0
+        losses = 0
+        pnl = 0.0
+
+
+        for order in orders:
+
+            if order.side == OrderSide.SELL:
+
+                trades += 1
+
+
+                if order.filled_avg_price:
+
+                    # Alpaca does not provide full realized PnL here,
+                    # this is the framework. We will connect fills next.
+
+                    if float(order.filled_avg_price) > 0:
+
+                        wins += 1
+
+
+
+        if trades > 0:
+
+            win_rate = (
+                wins / trades
+            ) * 100
+
+        else:
+
+            win_rate = 0
+
+
+        return {
+
+            "trades": trades,
+            "wins": wins,
+            "losses": losses,
+            "win_rate": win_rate,
+            "pnl": pnl
+
+        }
+
+
+    except Exception as e:
+
+        log(
+            f"PERFORMANCE ERROR {e}"
+        )
+
+
+        return {
+
+            "trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "win_rate": 0,
+            "pnl": 0
+
+        }
 
 # =========================
 # LIVE DASHBOARD
