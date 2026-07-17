@@ -826,47 +826,49 @@ def buy(symbol):
 
 
 
-                # WAIT FOR FILL CHECK
+        # WAIT FOR FILL CHECK
 
         time.sleep(1)
 
 
         try:
 
-                    filled = api.get_order(order_id)
+            filled = api.get_order(order_id)
 
-        log(
-            f"{symbol} FILL STATUS={filled.status}"
-        )
-
-        log(
-            f"{symbol} FILLED_QTY={filled.filled_qty}"
-        )
-
-        log(
-            f"{symbol} AVG_PRICE={filled.filled_avg_price}"
-        )
-
-
-        if str(filled.status) == "filled":
-
-            state["entry_time"][symbol] = datetime.now()
-
-            state["last_trade_time"][symbol] = datetime.now()
-
-            state["highest_price"][symbol] = float(
-                filled.filled_avg_price
-            )
-
-            state["pending_orders"].pop(
-                symbol,
-                None
+            log(
+                f"{symbol} FILL STATUS={filled.status}"
             )
 
             log(
-                f"{symbol} ENTRY TRACKING STARTED"
+                f"{symbol} FILLED_QTY={filled.filled_qty}"
             )
-            except Exception as e:
+
+            log(
+                f"{symbol} AVG_PRICE={filled.filled_avg_price}"
+            )
+
+
+            if str(filled.status) == "filled":
+
+                state["entry_time"][symbol] = datetime.now()
+
+                state["last_trade_time"][symbol] = datetime.now()
+
+                state["highest_price"][symbol] = float(
+                    filled.filled_avg_price
+                )
+
+                state["pending_orders"].pop(
+                    symbol,
+                    None
+                )
+
+                log(
+                    f"{symbol} ENTRY TRACKING STARTED"
+                )
+
+
+        except Exception as e:
 
             log(
                 f"{symbol} FILL_CHECK_ERROR {e}"
