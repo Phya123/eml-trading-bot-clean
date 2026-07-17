@@ -588,6 +588,86 @@ def analyze(symbol):
 
     return price, trend
 # =========================
+# ORDER STATUS MANAGER
+# =========================
+
+def check_pending_orders():
+
+    try:
+
+        completed = []
+
+        for symbol, order_id in state["pending_orders"].items():
+
+            try:
+
+                order = api.get_order(order_id)
+
+
+                log(
+                    f"{symbol} ORDER STATUS={order.status}"
+                )
+
+
+                if order.status == "filled":
+
+                    fill_price = float(
+                        order.filled_avg_price
+                    )
+
+
+                    state["entry_time"][symbol] = datetime.now()
+
+
+                    state["highest_price"][symbol] = fill_price
+
+
+                    log(
+                        f"{symbol} ENTRY TRACKING STARTED PRICE={fill_price:.2f}"
+                    )
+
+
+                    completed.append(symbol)
+
+
+
+                elif order.status in [
+                    "canceled",
+                    "rejected",
+                    "expired"
+                ]:
+
+                    log(
+                        f"{symbol} ORDER FAILED STATUS={order.status}"
+                    )
+
+                    completed.append(symbol)
+
+
+
+            except Exception as e:
+
+                log(
+                    f"{symbol} ORDER CHECK ERROR {e}"
+                )
+
+
+        # remove completed orders
+
+        for symbol in completed:
+
+            state["pending_orders"].pop(
+                symbol,
+                None
+            )
+
+
+    except Exception as e:
+
+        log(
+            f"PENDING ORDER MANAGER ERROR {e}"
+        )
+# =========================
 # BUY ENGINE
 # =========================
 
@@ -1264,7 +1344,6 @@ log(
 )
 
 
-
 initialize_symbol_stats()
 
 recover_positions()
@@ -1273,66 +1352,49 @@ recover_positions()
 
 while True:
 
-
     try:
 
-
         check_circuit_breaker()
-
-
 
         clock = api.get_clock()
 
 
-
         if not clock.is_open:
-
-
 
             log(
                 "MARKET CLOSED - MONITORING ONLY"
             )
 
-
-
             log_dashboard()
-
 
 
 
         else:
 
+            check_pending_orders()
 
 
             for sym in SYMBOLS:
-
 
                 log(
                     f"LOOP START -> {sym}"
                 )
 
-
                 buy(sym)
 
 
-
-
             manage_positions()
-
 
 
             log_dashboard()
 
 
 
-
     except Exception as e:
-
 
         log(
             f"LOOP ERROR {e}"
         )
-
 
 
     time.sleep(60)
