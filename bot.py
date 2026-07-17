@@ -1308,7 +1308,114 @@ def get_trade_history_stats():
             "pnl": 0
 
         }
+# =========================
+# REAL PERFORMANCE ENGINE
+# =========================
 
+def get_real_performance():
+
+    try:
+
+        request = GetOrdersRequest(
+            status=QueryOrderStatus.CLOSED,
+            limit=500
+        )
+
+
+        orders = api.get_orders(
+            filter=request
+        )
+
+
+        buys = {}
+        wins = 0
+        losses = 0
+        realized_pnl = 0.0
+        total_trades = 0
+
+
+        for order in orders:
+
+            if order.status != "filled":
+                continue
+
+
+            symbol = order.symbol
+
+
+            if order.side == OrderSide.BUY:
+
+                buys[symbol] = {
+                    "qty": float(order.filled_qty),
+                    "price": float(order.filled_avg_price)
+                }
+
+
+            elif order.side == OrderSide.SELL:
+
+                if symbol in buys:
+
+                    entry = buys[symbol]["price"]
+
+                    exit_price = float(
+                        order.filled_avg_price
+                    )
+
+                    qty = buys[symbol]["qty"]
+
+
+                    pnl = (
+                        exit_price - entry
+                    ) * qty
+
+
+                    realized_pnl += pnl
+
+                    total_trades += 1
+
+
+                    if pnl > 0:
+                        wins += 1
+                    else:
+                        losses += 1
+
+
+        win_rate = 0
+
+        if total_trades > 0:
+
+            win_rate = (
+                wins / total_trades
+            ) * 100
+
+
+        return {
+
+            "trades": total_trades,
+            "wins": wins,
+            "losses": losses,
+            "win_rate": win_rate,
+            "pnl": realized_pnl
+
+        }
+
+
+    except Exception as e:
+
+        log(
+            f"REAL PERFORMANCE ERROR {e}"
+        )
+
+
+        return {
+
+            "trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "win_rate": 0,
+            "pnl": 0
+
+        }
 # =========================
 # LIVE DASHBOARD
 # =========================
