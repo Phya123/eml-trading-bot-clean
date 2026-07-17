@@ -777,24 +777,70 @@ def buy(symbol):
         else:
 
 
-            # BUY FRACTIONAL SHARES
+    # =========================
+    # CHECK PENDING ORDERS
+    # =========================
 
-            order = MarketOrderRequest(
+    if symbol in state["pending_orders"]:
 
-                symbol=symbol,
-
-                notional=round(spend, 2),
-
-                side=OrderSide.BUY,
-
-                time_in_force=TimeInForce.DAY
-
-            )
-                if symbol in state["pending_orders"]:
         log(
             f"{symbol} SKIPPED - ORDER_PENDING"
         )
+
         return
+
+
+    # =========================
+    # ORDER SUBMISSION
+    # WHOLE + FRACTIONAL SHARES
+    # =========================
+
+
+    if spend >= price:
+
+        # BUY WHOLE SHARES
+
+        qty = int(
+            spend // price
+        )
+
+        if qty < 1:
+
+            log(
+                f"{symbol} SHARE SIZE TOO SMALL"
+            )
+
+            return
+
+
+        order = MarketOrderRequest(
+
+            symbol=symbol,
+
+            qty=qty,
+
+            side=OrderSide.BUY,
+
+            time_in_force=TimeInForce.DAY
+
+        )
+
+
+    else:
+
+        # BUY FRACTIONAL SHARES
+
+        order = MarketOrderRequest(
+
+            symbol=symbol,
+
+            notional=round(spend, 2),
+
+            side=OrderSide.BUY,
+
+            time_in_force=TimeInForce.DAY
+
+        )
 
 
 
