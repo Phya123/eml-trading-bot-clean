@@ -1378,9 +1378,11 @@ while True:
 
     try:
 
-    check_daily_reset()
+        check_daily_reset()
 
-    check_circuit_breaker()
+        check_circuit_breaker()
+
+
         clock = api.get_clock()
 
 
@@ -1391,7 +1393,6 @@ while True:
             )
 
             log_dashboard()
-
 
 
         else:
@@ -1410,9 +1411,7 @@ while True:
 
             manage_positions()
 
-
             log_dashboard()
-
 
 
     except Exception as e:
