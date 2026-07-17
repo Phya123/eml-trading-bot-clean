@@ -735,11 +735,7 @@ def buy(symbol):
     # WHOLE + FRACTIONAL SHARES
     # =========================
 
-    try:
-
-
-
-        if spend >= price:
+    
 
 
             # BUY WHOLE SHARES
@@ -795,35 +791,54 @@ def buy(symbol):
     # WHOLE + FRACTIONAL SHARES
     # =========================
 
+    try:
 
-    if spend >= price:
+        if spend >= price:
 
-        # BUY WHOLE SHARES
+            # BUY WHOLE SHARES
 
-        qty = int(
-            spend // price
-        )
-
-        if qty < 1:
-
-            log(
-                f"{symbol} SHARE SIZE TOO SMALL"
+            qty = int(
+                spend // price
             )
 
-            return
+
+            if qty < 1:
+
+                log(
+                    f"{symbol} SHARE SIZE TOO SMALL"
+                )
+
+                return
 
 
-        order = MarketOrderRequest(
+            order = MarketOrderRequest(
 
-            symbol=symbol,
+                symbol=symbol,
 
-            qty=qty,
+                qty=qty,
 
-            side=OrderSide.BUY,
+                side=OrderSide.BUY,
 
-            time_in_force=TimeInForce.DAY
+                time_in_force=TimeInForce.DAY
 
-        )
+            )
+
+
+        else:
+
+            # BUY FRACTIONAL SHARES
+
+            order = MarketOrderRequest(
+
+                symbol=symbol,
+
+                notional=round(spend, 2),
+
+                side=OrderSide.BUY,
+
+                time_in_force=TimeInForce.DAY
+
+            )
 
 
     else:
