@@ -787,7 +787,7 @@ def buy(symbol):
             )
 
 
-        else:
+        
 
             # BUY FRACTIONAL SHARES
 
