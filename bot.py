@@ -1333,7 +1333,31 @@ def log_dashboard():
 
 
 
+# =========================
+# DAILY RESET MANAGER
+# =========================
 
+def check_daily_reset():
+
+    global ENABLE_TRADING
+
+    today = date.today()
+
+
+    if state["day"] != today:
+
+        log(
+            "NEW TRADING DAY - RESETTING DAILY STATS"
+        )
+
+
+        state["day"] = today
+
+        state["trade_count"] = 0
+
+        state["start_equity"] = None
+
+        ENABLE_TRADING = True
 
 # =========================
 # MAIN LOOP
@@ -1354,8 +1378,9 @@ while True:
 
     try:
 
-        check_circuit_breaker()
+    check_daily_reset()
 
+    check_circuit_breaker()
         clock = api.get_clock()
 
 
