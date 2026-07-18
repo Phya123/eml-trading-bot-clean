@@ -1414,7 +1414,9 @@ def get_real_performance():
 # LIVE DASHBOARD
 # =========================
 def get_real_performance():
-    
+    pass
+
+
 def log_dashboard():
 
     try:
