@@ -1380,13 +1380,7 @@ def get_real_performance():
                         losses += 1
 
 
-        win_rate = 0
-
-        if total_trades > 0:
-
-            win_rate = (
-                wins / total_trades
-            ) * 100
+        
 
 
         return {
@@ -1419,7 +1413,8 @@ def get_real_performance():
 # =========================
 # LIVE DASHBOARD
 # =========================
-
+def get_real_performance():
+    
 def log_dashboard():
 
     try:
@@ -1435,22 +1430,21 @@ def log_dashboard():
 
 
 
-        win_rate = 0
+        # =========================
+        # REAL PERFORMANCE DATA
+        # =========================
 
+        performance = get_real_performance()
 
+        trades = performance["trades"]
 
-        if trade_stats["trades"] > 0:
+        wins = performance["wins"]
 
+        losses = performance["losses"]
 
-            win_rate = (
+        win_rate = performance["win_rate"]
 
-                trade_stats["wins"]
-
-                /
-
-                trade_stats["trades"]
-
-            ) * 100
+        realized_pnl = performance["pnl"]
 
 
 
@@ -1486,12 +1480,12 @@ def log_dashboard():
 
 
         log(
-            f"Trades: {trade_stats['trades']}"
+            f"Trades: {trades}"
         )
 
 
         log(
-            f"Wins: {trade_stats['wins']} | Losses: {trade_stats['losses']}"
+            f"Wins: {wins} | Losses: {losses}"
         )
 
 
@@ -1501,7 +1495,7 @@ def log_dashboard():
 
 
         log(
-            f"PnL: {trade_stats['pnl']:.4f}"
+            f"Realized PnL: {realized_pnl:.2f}"
         )
 
 
