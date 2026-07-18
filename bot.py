@@ -1414,7 +1414,18 @@ def get_real_performance():
 # LIVE DASHBOARD
 # =========================
 def get_real_performance():
-    pass
+
+    return {
+        "trades": trade_stats["trades"],
+        "wins": trade_stats["wins"],
+        "losses": trade_stats["losses"],
+        "win_rate": (
+            trade_stats["wins"] / trade_stats["trades"] * 100
+            if trade_stats["trades"] > 0
+            else 0
+        ),
+        "pnl": trade_stats["pnl"]
+    }
 
 
 def log_dashboard():
