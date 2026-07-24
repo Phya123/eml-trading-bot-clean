@@ -144,8 +144,6 @@ data_api = StockHistoricalDataClient(
 state = {
     "start_equity": None,
     "last_trade_time": {},
-    "entry_time": {},
-    "highest_price": {},
     "trade_count": 0,
     "day": date.today(),
     "vol_history": {},
@@ -878,109 +876,66 @@ def buy(symbol):
         return
 
 
-    # =========================
-    # ORDER SUBMISSION
-    # WHOLE + FRACTIONAL SHARES
-    # =========================
-
-    try:
-
-        if spend >= price:
-
-            # BUY WHOLE SHARES
-
-            qty = int(
-                spend // price
-            )
-
-            if qty < 1:
-
-                log(
-                    f"{symbol} SHARE SIZE TOO SMALL"
-                )
-
-                return
-
-
-            qty = int(spend / price)
-
-        if qty >= 1:
-    order = MarketOrderRequest(
-        symbol=symbol,
-        qty=qty,
-        side=OrderSide.BUY,
-        time_in_force=TimeInForce.DAY
-    )
-else:
-    order = MarketOrderRequest(
-        symbol=symbol,
-        notional=round(spend, 2),
-        side=OrderSide.BUY,
-        time_in_force=TimeInForce.DAY
-    )
-            
-
-
-
-        else:
-
-            # BUY FRACTIONAL SHARES
-
-            order = MarketOrderRequest(
-
-                symbol=symbol,
-
-                notional=round(spend, 2),
-
-                side=OrderSide.BUY,
-
-                time_in_force=TimeInForce.DAY
-
-            )
-        submitted = api.submit_order(
-            order_data=order
-        )
-        state["pending_orders"][symbol] = submitted.id
-
-
-
-        order_id = submitted.id
-
-
-
-        state["order_map"][order_id] = symbol
-
-
-
-        # TRACK ENTRY TIME
-
-        
-
-        log(
-            f"{symbol} ORDER SENT id={order_id}"
-        )
-
-
-
-        # WAIT FOR FILL CHECK
-
-        
-
-
-        
-        time.sleep(2)
+# =========================
+# ORDER SUBMISSION
+# WHOLE + FRACTIONAL SHARES
+# =========================
 
 try:
-    filled = api.get_order_by_id(
-        GetOrderByIdRequest(order_id=order_id)
-    )
 
-    log(f"{symbol} STATUS={filled.status}")
-    log(f"{symbol} FILLED={filled.filled_qty}")
-    log(f"{symbol} PRICE={filled.filled_avg_price}")
+    # Buy whole shares if possible
+    qty = int(spend // price)
+
+    if qty >= 1:
+        order = MarketOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.BUY,
+            time_in_force=TimeInForce.DAY
+        )
+
+    else:
+        # Fall back to fractional shares
+        order = MarketOrderRequest(
+            symbol=symbol,
+            notional=round(spend, 2),
+            side=OrderSide.BUY,
+            time_in_force=TimeInForce.DAY
+        )
+
+    # Submit order
+    submitted = api.submit_order(order_data=order)
+
+    order_id = submitted.id
+
+    state["order_map"][order_id] = symbol
+    state["pending_orders"][symbol] = order_id
+    state["last_trade_time"][symbol] = datetime.now()
+
+    log(f"{symbol} ORDER SENT id={order_id}")
+
+    # Wait for fill
+    time.sleep(2)
+
+    try:
+        filled = api.get_order_by_id(
+            GetOrderByIdRequest(order_id=order_id)
+        )
+
+        log(f"{symbol} STATUS={filled.status}")
+        log(f"{symbol} FILLED={filled.filled_qty}")
+        log(f"{symbol} PRICE={filled.filled_avg_price}")
+
+    except Exception as e:
+        log(f"{symbol} ORDER CHECK ERROR {e}")
+
+    state["trade_count"] += 1
+    trade_stats["trades"] += 1
+
+    log(f"BUY CONFIRMED {symbol}")
 
 except Exception as e:
-    log(f"{symbol} ORDER CHECK ERROR {e}")
+    log(f"{symbol} BUY ERROR {e}")
         
         
 
