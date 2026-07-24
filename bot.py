@@ -883,10 +883,11 @@ def buy(symbol):
 
 try:
 
-    # Buy whole shares if possible
+    # Calculate whole shares first
     qty = int(spend // price)
 
     if qty >= 1:
+
         order = MarketOrderRequest(
             symbol=symbol,
             qty=qty,
@@ -895,7 +896,8 @@ try:
         )
 
     else:
-        # Fall back to fractional shares
+
+        # Fractional shares fallback
         order = MarketOrderRequest(
             symbol=symbol,
             notional=round(spend, 2),
@@ -903,95 +905,102 @@ try:
             time_in_force=TimeInForce.DAY
         )
 
+
     # Submit order
-    submitted = api.submit_order(order_data=order)
+    submitted = api.submit_order(
+        order_data=order
+    )
 
     order_id = submitted.id
 
     state["order_map"][order_id] = symbol
     state["pending_orders"][symbol] = order_id
-    state["last_trade_time"][symbol] = datetime.now()
 
-    log(f"{symbol} ORDER SENT id={order_id}")
 
-    # Wait for fill
+    log(
+        f"{symbol} ORDER SENT id={order_id}"
+    )
+
+
+    # Wait for Alpaca execution
     time.sleep(2)
 
+
     try:
+
         filled = api.get_order_by_id(
-            GetOrderByIdRequest(order_id=order_id)
+            order_id
         )
 
-        log(f"{symbol} STATUS={filled.status}")
-        log(f"{symbol} FILLED={filled.filled_qty}")
-        log(f"{symbol} PRICE={filled.filled_avg_price}")
 
-    except Exception as e:
-        log(f"{symbol} ORDER CHECK ERROR {e}")
+        log(
+            f"{symbol} STATUS={filled.status}"
+        )
 
-    state["trade_count"] += 1
-    trade_stats["trades"] += 1
+        log(
+            f"{symbol} FILLED={filled.filled_qty}"
+        )
 
-    log(f"BUY CONFIRMED {symbol}")
-
-except Exception as e:
-    log(f"{symbol} BUY ERROR {e}")
-        
-        
+        log(
+            f"{symbol} PRICE={filled.filled_avg_price}"
+        )
 
 
+        if str(filled.status).lower() == "filled":
 
 
-            if str(filled.status) == "filled":
-
-                state["entry_time"][symbol] = datetime.now()
-
-                state["last_trade_time"][symbol] = datetime.now()
-
-                state["highest_price"][symbol] = float(
-                    filled.filled_avg_price
-                )
-
-                state["pending_orders"].pop(
-                    symbol,
-                    None
-                )
-
-                log(
-                    f"{symbol} ENTRY TRACKING STARTED"
-                )
-
-
-        except Exception as e:
-
-            log(
-                f"{symbol} FILL_CHECK_ERROR {e}"
+            entry_price = float(
+                filled.filled_avg_price
             )
 
 
+            state["entry_time"][symbol] = datetime.now()
+
+            state["last_trade_time"][symbol] = datetime.now()
+
+            state["highest_price"][symbol] = entry_price
 
 
-
-        state["trade_count"] += 1
-
-
-        trade_stats["trades"] += 1
-
+            state["pending_orders"].pop(
+                symbol,
+                None
+            )
 
 
-        log(
-            f"BUY CONFIRMED {symbol} ${spend:.2f}"
-        )
+            state["trade_count"] += 1
+
+            trade_stats["trades"] += 1
 
 
+            log(
+                f"BUY CONFIRMED {symbol} ${spend:.2f}"
+            )
+
+
+            log(
+                f"{symbol} ENTRY TRACKING STARTED"
+            )
+
+
+        else:
+
+            log(
+                f"{symbol} NOT FILLED STATUS={filled.status}"
+            )
 
 
     except Exception as e:
 
-
         log(
-            f"{symbol} BUY_ERROR {e}"
+            f"{symbol} FILL_CHECK_ERROR {e}"
         )
+
+
+except Exception as e:
+
+    log(
+        f"{symbol} BUY_ERROR {e}"
+    )
 # =========================
 # POSITION MANAGEMENT
 # =========================
