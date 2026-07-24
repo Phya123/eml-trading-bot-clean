@@ -2,3 +2,4 @@ alpaca-py
 requests
 pandas
 numpy
+python-dotenv
