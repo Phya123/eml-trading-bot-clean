@@ -930,24 +930,19 @@ def buy(symbol):
 # ORDER SUBMISSION
 # WHOLE + FRACTIONAL SHARES
 # =========================
-
 try:
 
-    # Calculate whole shares first
+    # Buy whole shares if possible
     qty = int(spend // price)
 
     if qty >= 1:
-
         order = MarketOrderRequest(
             symbol=symbol,
             qty=qty,
             side=OrderSide.BUY,
             time_in_force=TimeInForce.DAY
         )
-
     else:
-
-        # Fractional shares fallback
         order = MarketOrderRequest(
             symbol=symbol,
             notional=round(spend, 2),
@@ -955,121 +950,45 @@ try:
             time_in_force=TimeInForce.DAY
         )
 
-
-    # Submit order
-    submitted = api.submit_order(
-        order_data=order
-    )
+    submitted = api.submit_order(order_data=order)
 
     order_id = submitted.id
 
     state["order_map"][order_id] = symbol
     state["pending_orders"][symbol] = order_id
 
+    log(f"{symbol} ORDER SENT id={order_id}")
 
-    log(
-        f"{symbol} ORDER SENT id={order_id}"
-    )
-
-
-    # Wait for Alpaca execution
     time.sleep(2)
 
-
     try:
-
         filled = api.get_order_by_id(
-            order_id
+            GetOrderByIdRequest(order_id=order_id)
         )
 
-
-        log(
-            f"{symbol} STATUS={filled.status}"
-        )
-
-        log(
-            f"{symbol} FILLED={filled.filled_qty}"
-        )
-
-        log(
-            f"{symbol} PRICE={filled.filled_avg_price}"
-        )
-
+        log(f"{symbol} STATUS={filled.status}")
+        log(f"{symbol} FILLED={filled.filled_qty}")
+        log(f"{symbol} PRICE={filled.filled_avg_price}")
 
         if str(filled.status).lower() == "filled":
 
-
-            entry_price = float(
-                filled.filled_avg_price
-            )
-
-
             state["entry_time"][symbol] = datetime.now()
-
             state["last_trade_time"][symbol] = datetime.now()
+            state["highest_price"][symbol] = float(filled.filled_avg_price)
 
-            state["highest_price"][symbol] = entry_price
-
-
-            state["pending_orders"].pop(
-                symbol,
-                None
-            )
-
+            state["pending_orders"].pop(symbol, None)
 
             state["trade_count"] += 1
-
             trade_stats["trades"] += 1
 
-
-            log(
-                f"BUY CONFIRMED {symbol} ${spend:.2f}"
-            )
-
-
-            log(
-                f"{symbol} ENTRY TRACKING STARTED"
-            )
-
-
-        else:
-
-            log(
-                f"{symbol} NOT FILLED STATUS={filled.status}"
-            )
-
+            log(f"{symbol} ENTRY TRACKING STARTED")
+            log(f"BUY CONFIRMED {symbol}")
 
     except Exception as e:
-
-        log(
-            f"{symbol} FILL_CHECK_ERROR {e}"
-        )
-
+        log(f"{symbol} ORDER CHECK ERROR {e}")
 
 except Exception as e:
-
-    log(
-        f"{symbol} BUY_ERROR {e}"
-    )
-# =========================
-# POSITION MANAGEMENT
-# =========================
-
-def manage_positions():
-
-    try:
-
-        positions = api.get_all_positions()
-
-        for p in positions:
-
-            entry = float(
-                p.avg_entry_price
-            )
-
-            price = float(
-                p.current_price
-            )
+    log(f"{symbol} BUY ERROR {e}")
 
             # =========================
             # TRACK HIGHEST PRICE
