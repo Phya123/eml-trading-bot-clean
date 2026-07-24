@@ -1,22 +1,45 @@
-import os
 import time
 import logging
-import sys
-import csv
+from datetime import datetime
 
-import pandas as pd
-
-from datetime import date, datetime
-
+from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
-from alpaca.trading.client import TradingClient
 
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
-from alpaca.trading.requests import GetOrdersRequest
 
+# =========================
+# ALPACA CONNECTION
+# =========================
+
+api = TradingClient(
+    API_KEY,
+    API_SECRET,
+    paper=False
+)
+
+
+log(
+    "SENTINEL ENGINE ONLINE"
+)
+def buy(symbol):
+
+    # your buy logic here
+
+
+    submitted = api.submit_order(
+        order_data=order
+    )
+
+
+    order_id = submitted.id
+
+
+    time.sleep(2)
+
+
+    filled = api.get_order_by_id(
+        order_id
+    )
 
 filled = api.get_order_by_id(
     GetOrderByIdRequest(order_id=order_id)
