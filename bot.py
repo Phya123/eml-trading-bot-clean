@@ -1,10 +1,37 @@
+# =========================
+# IMPORTS
+# =========================
+
+import os
 import time
 import logging
-from datetime import datetime
+
+from dotenv import load_dotenv
 
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest
-from alpaca.trading.enums import OrderSide, TimeInForce
+
+
+# =========================
+# LOAD ENVIRONMENT
+# =========================
+
+load_dotenv()
+
+
+API_KEY = os.getenv(
+    "ALPACA_API_KEY"
+)
+
+API_SECRET = os.getenv(
+    "ALPACA_SECRET_KEY"
+)
+
+
+if not API_KEY or not API_SECRET:
+
+    raise Exception(
+        "Missing Alpaca API credentials"
+    )
 
 
 # =========================
@@ -18,8 +45,8 @@ api = TradingClient(
 )
 
 
-log(
-    "SENTINEL ENGINE ONLINE"
+logging.info(
+    "ALPACA CONNECTION ONLINE"
 )
 def buy(symbol):
 
