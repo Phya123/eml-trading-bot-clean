@@ -987,8 +987,8 @@ try:
     except Exception as e:
         log(f"{symbol} ORDER CHECK ERROR {e}")
 
-except Exception as e:
-    log(f"{symbol} BUY ERROR {e}")
+    except Exception as e:
+        log(f"{symbol} BUY ERROR {e}")
 
             # =========================
             # TRACK HIGHEST PRICE
