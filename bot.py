@@ -16,8 +16,11 @@ from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.requests import GetOrdersRequest
-from alpaca.trading.enums import QueryOrderStatus
 
+
+filled = api.get_order_by_id(
+    GetOrderByIdRequest(order_id=order_id)
+)
 # =========================
 # CONFIG
 # =========================
@@ -49,8 +52,11 @@ MAX_CAPITAL_USAGE = 0.15
 
 # UPDATED RISK SETTINGS
 
-STOP_LOSS_PCT = 0.03
-TAKE_PROFIT_PCT = 0.08
+STOP_LOSS_PCT = 0.02
+TAKE_PROFIT_PCT = 0.12
+MIN_HOLD_MINUTES = 30
+TRAILING_STOP_PCT = 0.03
+BREAKEVEN_TRIGGER = 0.05
 
 COOLDOWN_SECONDS = 900      # 15 minutes
 MIN_HOLD_MINUTES = 15
@@ -896,17 +902,24 @@ def buy(symbol):
                 return
 
 
-            order = MarketOrderRequest(
+            qty = int(spend / price)
 
-                symbol=symbol,
+        if qty >= 1:
+    order = MarketOrderRequest(
+        symbol=symbol,
+        qty=qty,
+        side=OrderSide.BUY,
+        time_in_force=TimeInForce.DAY
+    )
+else:
+    order = MarketOrderRequest(
+        symbol=symbol,
+        notional=round(spend, 2),
+        side=OrderSide.BUY,
+        time_in_force=TimeInForce.DAY
+    )
+            
 
-                qty=qty,
-
-                side=OrderSide.BUY,
-
-                time_in_force=TimeInForce.DAY
-
-            )
 
 
         else:
@@ -951,24 +964,27 @@ def buy(symbol):
 
         # WAIT FOR FILL CHECK
 
-        time.sleep(1)
+        
 
 
-        try:
+        
+        time.sleep(2)
 
-            filled = api.get_order(order_id)
+try:
+    filled = api.get_order_by_id(
+        GetOrderByIdRequest(order_id=order_id)
+    )
 
-            log(
-                f"{symbol} FILL STATUS={filled.status}"
-            )
+    log(f"{symbol} STATUS={filled.status}")
+    log(f"{symbol} FILLED={filled.filled_qty}")
+    log(f"{symbol} PRICE={filled.filled_avg_price}")
 
-            log(
-                f"{symbol} FILLED_QTY={filled.filled_qty}"
-            )
+except Exception as e:
+    log(f"{symbol} ORDER CHECK ERROR {e}")
+        
+        
 
-            log(
-                f"{symbol} AVG_PRICE={filled.filled_avg_price}"
-            )
+
 
 
             if str(filled.status) == "filled":
