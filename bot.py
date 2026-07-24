@@ -1548,40 +1548,51 @@ initialize_symbol_stats()
 recover_positions()
 
 
-
 while True:
 
     try:
 
+        # =========================
+        # DAILY RESET CHECK
+        # =========================
+
         check_daily_reset()
 
-        check_circuit_breaker()
 
+        # =========================
+        # RISK PROTECTION
+        # =========================
+
+        if check_circuit_breaker():
+
+            log(
+                "CIRCUIT BREAKER ACTIVE - NO NEW TRADES"
+            )
+
+            manage_positions()
+
+            log_dashboard()
+
+            time.sleep(60)
+
+            continue
+
+
+
+        # =========================
+        # MARKET STATUS
+        # =========================
 
         clock = api.get_clock()
 
 
+
         if not clock.is_open:
+
 
             log(
                 "MARKET CLOSED - MONITORING ONLY"
             )
-
-            log_dashboard()
-
-
-        else:
-
-            check_pending_orders()
-
-
-            for sym in SYMBOLS:
-
-                log(
-                    f"LOOP START -> {sym}"
-                )
-
-                buy(sym)
 
 
             manage_positions()
@@ -1589,11 +1600,83 @@ while True:
             log_dashboard()
 
 
+
+        else:
+
+
+            # =========================
+            # CHECK EXISTING ORDERS
+            # =========================
+
+            check_pending_orders()
+
+
+
+            # =========================
+            # SCAN WATCHLIST
+            # =========================
+
+            if ENABLE_TRADING:
+
+
+                for sym in SYMBOLS:
+
+
+                    try:
+
+
+                        log(
+                            f"SCANNING {sym}"
+                        )
+
+
+                        buy(sym)
+
+
+
+                    except Exception as e:
+
+
+                        log(
+                            f"{sym} BUY ERROR {e}"
+                        )
+
+
+
+            else:
+
+
+                log(
+                    "TRADING DISABLED - MONITORING ONLY"
+                )
+
+
+
+            # =========================
+            # POSITION MANAGEMENT
+            # =========================
+
+            manage_positions()
+
+
+
+            # =========================
+            # DASHBOARD UPDATE
+            # =========================
+
+            log_dashboard()
+
+
+
     except Exception as e:
 
+
         log(
-            f"LOOP ERROR {e}"
+            f"MAIN LOOP ERROR {e}"
         )
 
+
+
+    # Engine heartbeat
 
     time.sleep(60)
