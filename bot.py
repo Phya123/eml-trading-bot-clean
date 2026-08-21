@@ -1025,16 +1025,13 @@ if entry_time:
         datetime.now() - entry_time
     ).total_seconds() / 60
 
+    if held_minutes < MIN_HOLD_MINUTES:
 
-             if held_minutes < MIN_HOLD_MINUTES:
+        log(
+            f"{p.symbol} HOLDING ({held_minutes:.1f} min)"
+        )
 
-
-                    log(
-                        f"{p.symbol} HOLDING ({held_minutes:.1f} min)"
-                    )
-
-
-                    continue
+        continue
 
 
 
