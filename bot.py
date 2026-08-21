@@ -1063,7 +1063,7 @@ log(
             # SMART PROFIT SYSTEM
             # =========================
 
-            if pnl_pct >= BREAKEVEN_TRIGGER:
+                if pnl_pct >= BREAKEVEN_TRIGGER:
 
                 trail_price = highest * (
                     1 - TRAILING_STOP_PCT
