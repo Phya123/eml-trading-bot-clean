@@ -930,8 +930,8 @@ def buy(symbol):
 # ORDER SUBMISSION
 # WHOLE + FRACTIONAL SHARES
 # =========================
-try:
 
+try:
     # Buy whole shares if possible
     qty = int(spend // price)
 
@@ -950,41 +950,63 @@ try:
             time_in_force=TimeInForce.DAY
         )
 
-    submitted = api.submit_order(order_data=order)
+    # Submit the order ONCE
+    submitted = trading_client.submit_order(order_data=order)
 
     order_id = submitted.id
 
-    state["order_map"][order_id] = symbol
+    state["order_map"][str(order_id)] = symbol
     state["pending_orders"][symbol] = order_id
 
     log(f"{symbol} ORDER SENT id={order_id}")
 
+    # Give Alpaca time to process the order
     time.sleep(2)
 
-    try:
-        
-        log(f"{symbol} STATUS={filled.status}")
-        log(f"{symbol} FILLED={filled.filled_qty}")
-        log(f"{symbol} PRICE={filled.filled_avg_price}")
+    # Check the submitted order
+    filled = trading_client.get_order_by_id(order_id)
 
     if str(filled.status).lower() == "filled":
+        state["entry_time"][symbol] = datetime.now()
+        state["last_trade_time"][symbol] = datetime.now()
 
-    state["entry_time"][symbol] = datetime.now()
-    state["last_trade_time"][symbol] = datetime.now()
-    state["highest_price"][symbol] = float(filled.filled_avg_price)
-    state["pending_orders"].pop(symbol, None)
+        if filled.filled_avg_price is not None:
+            state["highest_price"][symbol] = float(
+                filled.filled_avg_price
+            )
+        else:
+            state["highest_price"][symbol] = price
 
-    state["trade_count"] += 1
-    trade_stats["trades"] += 1
+        state["pending_orders"].pop(symbol, None)
 
-    log(f"{symbol} ENTRY TRACKING STARTED")
-    log(f"BUY CONFIRMED {symbol}")
+        state["trade_count"] += 1
+        trade_stats["trades"] += 1
+
+        log(
+            f"{symbol} BUY FILLED "
+            f"price={filled.filled_avg_price} "
+            f"qty={filled.filled_qty}"
+        )
+
+    else:
+        log(
+            f"{symbol} ORDER STATUS "
+            f"{str(filled.status).lower()}"
+        )
 
 except Exception as e:
-    log(f"{symbol} ORDER CHECK ERROR {e}")
-    
-except Exception as e:
-    log(f"{symbol} BUY ERROR {e}")
+    logging.error(f"ORDER ERROR {symbol}: {e}")
+
+
+# =========================
+# TRACK HIGHEST PRICE
+# =========================
+
+state.setdefault("highest_price", {})
+
+symbol = p.symbol
+
+highest = state["highest_price"].get(symbol, price)
         
 # =========================
 # TRACK HIGHEST PRICE
