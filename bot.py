@@ -1007,46 +1007,23 @@ state.setdefault("highest_price", {})
 symbol = p.symbol
 
 highest = state["highest_price"].get(symbol, price)
-        
-# =========================
-# TRACK HIGHEST PRICE
-# =========================
-
-state.setdefault("highest_price", {})
-
-symbol = p.symbol
-
-highest = state["highest_price"].get(symbol, price)
 
 if price > highest:
     highest = price
     state["highest_price"][symbol] = highest
 
-# Continue with your existing code...
-# entry_time = state["entry_time"].get(p.symbol)
 
+# =========================
+# MINIMUM HOLD PROTECTION
+# =========================
 
-            
+entry_time = state["entry_time"].get(p.symbol)
 
-            # =========================
-            # MINIMUM HOLD PROTECTION
-            # =========================
+if entry_time:
 
-            entry_time = state["entry_time"].get(
-                p.symbol
-            )
-
-
-
-            if entry_time:
-
-
-                held_minutes = (
-
-                    datetime.now() - entry_time
-
-                ).total_seconds() / 60
-
+    held_minutes = (
+        datetime.now() - entry_time
+    ).total_seconds() / 60
 
 
                 if held_minutes < MIN_HOLD_MINUTES:
