@@ -963,11 +963,11 @@ try:
 
     try:
         
-         log(f"{symbol} STATUS={filled.status}")
-         log(f"{symbol} FILLED={filled.filled_qty}")
-         log(f"{symbol} PRICE={filled.filled_avg_price}")
+        log(f"{symbol} STATUS={filled.status}")
+        log(f"{symbol} FILLED={filled.filled_qty}")
+        log(f"{symbol} PRICE={filled.filled_avg_price}")
 
-    if str(filled.status).lower() == "filled":
+    if  str(filled.status).lower() == "filled":
         state["entry_time"][symbol] = datetime.now()
         state["last_trade_time"][symbol] = datetime.now()
         state["highest_price"][symbol] = float(filled.filled_avg_price)
