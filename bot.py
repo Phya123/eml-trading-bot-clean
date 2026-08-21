@@ -1059,51 +1059,97 @@ log(
 
 
            
-            # =========================
-            # SMART PROFIT SYSTEM
-            # =========================
+# =========================
+# SMART PROFIT SYSTEM
+# =========================
 
-                if pnl_pct >= BREAKEVEN_TRIGGER:
+# Update highest price reached
+highest = state["highest_price"].get(
+    p.symbol,
+    entry
+)
 
-                trail_price = highest * (
-                    1 - TRAILING_STOP_PCT
-                )
+highest = max(
+    highest,
+    price
+)
 
-                log(
-                    f"{p.symbol} HIGH={highest:.2f} TRAIL={trail_price:.2f}"
-                )
-
-                if price <= trail_price:
-
-                    api.close_position(
-                        p.symbol
-                    )
-
-                    log(
-                        f"{p.symbol} EXIT TRAILING STOP"
-                    )
-
-                    realized_pnl = (
-                        price - entry
-                    ) / entry * 100
+state["highest_price"][p.symbol] = highest
 
 
-                    update_symbol_stats(
-                        p.symbol,
-                        realized_pnl
-                    )
+# Only activate trailing stop after
+# the position reaches breakeven trigger
+if pnl_pct >= BREAKEVEN_TRIGGER:
 
+    trail_price = highest * (
+        1 - TRAILING_STOP_PCT
+    )
 
-                    trade_stats["pnl"] += realized_pnl
+    log(
+        f"{p.symbol} HIGH={highest:.2f} "
+        f"TRAIL={trail_price:.2f} "
+        f"CURRENT={price:.2f}"
+    )
 
+    # Trailing stop triggered
+    if price <= trail_price:
 
-                    if realized_pnl > 0:
+        log(
+            f"{p.symbol} EXIT TRAILING STOP"
+        )
 
-                        trade_stats["wins"] += 1
+        try:
 
-                    else:
+            api.close_position(
+                p.symbol
+            )
 
-                        trade_stats["losses"] += 1
+            # Calculate realized P&L
+            realized_pnl = (
+                (price - entry) / entry
+            ) * 100
+
+            update_symbol_stats(
+                p.symbol,
+                realized_pnl
+            )
+
+            trade_stats["pnl"] += realized_pnl
+
+            if realized_pnl > 0:
+
+                trade_stats["wins"] += 1
+
+            else:
+
+                trade_stats["losses"] += 1
+
+            # Clear position state
+            state["highest_price"].pop(
+                p.symbol,
+                None
+            )
+
+            state["entry_time"].pop(
+                p.symbol,
+                None
+            )
+
+            state["pending_orders"].pop(
+                p.symbol,
+                None
+            )
+
+            log(
+                f"{p.symbol} TRAILING EXIT "
+                f"PNL={realized_pnl:.2f}%"
+            )
+
+        except Exception as e:
+
+            log(
+                f"{p.symbol} TRAILING EXIT ERROR: {e}"
+            )
 
 
 
