@@ -993,6 +993,7 @@ try:
             # =========================
             # TRACK HIGHEST PRICE
             # =========================
+        
             highest = state["highest_price"].get(
                 p.symbol,
                 price
