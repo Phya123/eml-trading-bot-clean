@@ -962,33 +962,27 @@ try:
     time.sleep(2)
 
     try:
-        filled = api.get_order_by_id(
-            GetOrderByIdRequest(order_id=order_id)
-        )
+    log(f"{symbol} STATUS={filled.status}")
+    log(f"{symbol} FILLED={filled.filled_qty}")
+    log(f"{symbol} PRICE={filled.filled_avg_price}")
 
-        log(f"{symbol} STATUS={filled.status}")
-        log(f"{symbol} FILLED={filled.filled_qty}")
-        log(f"{symbol} PRICE={filled.filled_avg_price}")
+    if str(filled.status).lower() == "filled":
+        state["entry_time"][symbol] = datetime.now()
+        state["last_trade_time"][symbol] = datetime.now()
+        state["highest_price"][symbol] = float(filled.filled_avg_price)
+        state["pending_orders"].pop(symbol, None)
 
-        if str(filled.status).lower() == "filled":
+        state["trade_count"] += 1
+        trade_stats["trades"] += 1
 
-            state["entry_time"][symbol] = datetime.now()
-            state["last_trade_time"][symbol] = datetime.now()
-            state["highest_price"][symbol] = float(filled.filled_avg_price)
+        log(f"{symbol} ENTRY TRACKING STARTED")
+        log(f"BUY CONFIRMED {symbol}")
 
-            state["pending_orders"].pop(symbol, None)
-
-            state["trade_count"] += 1
-            trade_stats["trades"] += 1
-
-            log(f"{symbol} ENTRY TRACKING STARTED")
-            log(f"BUY CONFIRMED {symbol}")
-
-    except Exception as e:
-        log(f"{symbol} ORDER CHECK ERROR {e}")
-
-    except Exception as e:
-        log(f"{symbol} BUY ERROR {e}")
+except Exception as e:
+    log(f"{symbol} ORDER CHECK ERROR {e}")
+    
+except Exception as e:
+    log(f"{symbol} BUY ERROR {e}")
         
 # =========================
 # TRACK HIGHEST PRICE
