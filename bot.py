@@ -963,9 +963,9 @@ try:
 
     try:
         
-    log(f"{symbol} STATUS={filled.status}")
-    log(f"{symbol} FILLED={filled.filled_qty}")
-    log(f"{symbol} PRICE={filled.filled_avg_price}")
+         log(f"{symbol} STATUS={filled.status}")
+         log(f"{symbol} FILLED={filled.filled_qty}")
+         log(f"{symbol} PRICE={filled.filled_avg_price}")
 
     if str(filled.status).lower() == "filled":
         state["entry_time"][symbol] = datetime.now()
