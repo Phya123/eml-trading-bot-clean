@@ -1038,22 +1038,21 @@ if entry_time:
 
 
 
-            pnl_pct = (
+# =========================
+# UNREALIZED PNL
+# =========================
 
-                price - entry
+pnl_pct = (
+    price - entry
+) / entry
 
-            ) / entry
+log(
+    f"{p.symbol} UNREALIZED_PNL={pnl_pct:.2%}"
+)
 
-
-
-            log(
-                f"{p.symbol} UNREALIZED_PNL={pnl_pct:.2%}"
-            )
-
-
-            log(
-                f"{p.symbol} TP={TAKE_PROFIT_PCT:.2%} | CURRENT={pnl_pct:.2%}"
-            )
+log(
+    f"{p.symbol} TP={TAKE_PROFIT_PCT:.2%} | CURRENT={pnl_pct:.2%}"
+)
 
 
 
