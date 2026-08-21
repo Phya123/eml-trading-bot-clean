@@ -989,22 +989,25 @@ try:
 
     except Exception as e:
         log(f"{symbol} BUY ERROR {e}")
-
-            # =========================
-            # TRACK HIGHEST PRICE
-            # =========================
         
-            highest = state["highest_price"].get(
-                p.symbol,
-                price
-            )
+# =========================
+# TRACK HIGHEST PRICE
+# =========================
 
-            if price > highest:
-                highest = price
-                state["highest_price"][p.symbol] = highest
+state.setdefault("highest_price", {})
 
-            # Continue with your existing code...
-            # entry_time = state["entry_time"].get(p.symbol)
+symbol = p.symbol
+
+highest = state["highest_price"].get(symbol, price)
+
+if price > highest:
+    highest = price
+    state["highest_price"][symbol] = highest
+
+# Continue with your existing code...
+# entry_time = state["entry_time"].get(p.symbol)
+
+
             
 
             # =========================
