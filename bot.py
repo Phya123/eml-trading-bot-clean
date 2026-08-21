@@ -1026,7 +1026,7 @@ if entry_time:
     ).total_seconds() / 60
 
 
-                if held_minutes < MIN_HOLD_MINUTES:
+             if held_minutes < MIN_HOLD_MINUTES:
 
 
                     log(
