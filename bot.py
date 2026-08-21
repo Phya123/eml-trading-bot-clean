@@ -962,6 +962,7 @@ try:
     time.sleep(2)
 
     try:
+        
     log(f"{symbol} STATUS={filled.status}")
     log(f"{symbol} FILLED={filled.filled_qty}")
     log(f"{symbol} PRICE={filled.filled_avg_price}")
